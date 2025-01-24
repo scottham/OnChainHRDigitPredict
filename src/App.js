@@ -22,7 +22,6 @@ function App() {
   };
 
   const handlePredict = async () => {
-    console.log(RPC_URL)
 
     const imgData = canvasRef.current.getCanvasData();
 
