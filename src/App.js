@@ -36,7 +36,7 @@ function App() {
       setInferenceTime(null);
       
       const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-      console.log(provider);
+
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
       
 
