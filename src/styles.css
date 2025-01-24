@@ -1,0 +1,26 @@
+.app-container {
+    padding: 20px;
+    font-family: sans-serif;
+  }
+  
+  .button-group {
+    margin-top: 10px;
+  }
+  
+  .result {
+    margin-top: 20px;
+    font-size: 18px;
+  }
+  
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spinner {
+    animation: spin 1s linear infinite;
+  }
