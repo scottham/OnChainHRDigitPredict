@@ -1,5 +1,5 @@
-export const RPC_URL = process.env.REACT_APP_RPC_URL || "http://127.0.0.1:8545";
-export const CONTRACT_ADDRESS = process.env.REACT_APP_CONTRACT_ADDRESS || "0xcac6cb41c4CD7DBd151e841Ada569c7F035e2443";
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
+export const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0xcac6cb41c4CD7DBd151e841Ada569c7F035e2443";
 
 
 export const CONTRACT_ABI = [
@@ -28,6 +28,3 @@ export const CONTRACT_ABI = [
         "type": "function"
       }
 ];
-
-
-export const SCALE_FACTOR = 1000;

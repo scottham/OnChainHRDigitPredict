@@ -7,10 +7,10 @@ Fill REACT_APP_RPC_URL and REACT_APP_CONTRACT_ADDRESS in .env
 
 ```
 npm install
-npm start
+npm run dev
 ```
 
 
 ## Schematic
 
-![schematic](src/assets/schematic.png)
+![schematic](public/schematic.png)
