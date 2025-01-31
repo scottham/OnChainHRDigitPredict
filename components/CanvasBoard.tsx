@@ -59,7 +59,7 @@ const CanvasBoard = forwardRef((props, ref) => {
     initializeCanvas()
   }, [])
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     isDrawing.current = true
     const canvas = canvasRef.current
     if (canvas) {
@@ -68,8 +68,16 @@ const CanvasBoard = forwardRef((props, ref) => {
         const rect = canvas.getBoundingClientRect()
         const scaleX = canvas.width / rect.width
         const scaleY = canvas.height / rect.height
-        const x = (e.clientX - rect.left) * scaleX
-        const y = (e.clientY - rect.top) * scaleY
+        
+        let x: number, y: number
+        if ('touches' in e) {
+          e.preventDefault() // Prevent scrolling when drawing
+          x = (e.touches[0].clientX - rect.left) * scaleX
+          y = (e.touches[0].clientY - rect.top) * scaleY
+        } else {
+          x = (e.clientX - rect.left) * scaleX
+          y = (e.clientY - rect.top) * scaleY
+        }
 
         ctx.beginPath()
         ctx.moveTo(x, y)
@@ -81,7 +89,7 @@ const CanvasBoard = forwardRef((props, ref) => {
     isDrawing.current = false
   }
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDrawing.current) return
 
     const canvas = canvasRef.current
@@ -91,8 +99,16 @@ const CanvasBoard = forwardRef((props, ref) => {
         const rect = canvas.getBoundingClientRect()
         const scaleX = canvas.width / rect.width
         const scaleY = canvas.height / rect.height
-        const x = (e.clientX - rect.left) * scaleX
-        const y = (e.clientY - rect.top) * scaleY
+
+        let x: number, y: number
+        if ('touches' in e) {
+          e.preventDefault() // Prevent scrolling when drawing
+          x = (e.touches[0].clientX - rect.left) * scaleX
+          y = (e.touches[0].clientY - rect.top) * scaleY
+        } else {
+          x = (e.clientX - rect.left) * scaleX
+          y = (e.clientY - rect.top) * scaleY
+        }
 
         ctx.lineTo(x, y)
         ctx.stroke()
@@ -110,6 +126,10 @@ const CanvasBoard = forwardRef((props, ref) => {
         onMouseUp={stopDrawing}
         onMouseMove={draw}
         onMouseOut={stopDrawing}
+        onTouchStart={startDrawing}
+        onTouchEnd={stopDrawing}
+        onTouchMove={draw}
+        onTouchCancel={stopDrawing}
         className="absolute top-0 left-0 w-full h-full border border-gray-300 cursor-crosshair"
         style={{
           imageRendering: "pixelated",
