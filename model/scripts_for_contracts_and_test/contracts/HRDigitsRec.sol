@@ -90,6 +90,7 @@ contract MNISTNFT is ERC721 {
 
         uint256 newTokenId = _tokenIds + 1;
         _safeMint(msg.sender, newTokenId);
+        _tokenIds = newTokenId;
 
         ModelParams storage mp = _tokenModelParams[newTokenId];
         mp.conv1Weight = conv1Weight;

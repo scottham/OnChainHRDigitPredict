@@ -225,9 +225,7 @@ export default function Page() {
                     htmlFor="file-upload"
                     className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-6 py-2 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 w-full overflow-hidden"
                   >
-                    <span className="truncate">
-                      {fileName ? formatFileName(fileName) : "Upload your parameters"}
-                    </span>
+                    <span className="truncate">{fileName ? formatFileName(fileName) : "Upload your parameters"}</span>
                   </Label>
                 </div>
                 <Button
@@ -260,9 +258,31 @@ export default function Page() {
                         return
                       }
 
+                      const feeData = await provider!.getFeeData()
+                      console.log("Network suggested gas prices:", {
+                        maxFeePerGas: ethers.utils.formatUnits(feeData.maxFeePerGas || 0, "gwei"),
+                        maxPriorityFeePerGas: ethers.utils.formatUnits(feeData.maxPriorityFeePerGas || 0, "gwei"),
+                      })
+
                       setIsMinting(true)
                       const signer = provider!.getSigner()
                       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
+
+                      const gasEstimate = await contract.estimateGas.mint(
+                        modelParams.conv1,
+                        modelParams.conv1_bias,
+                        modelParams.conv2,
+                        modelParams.conv2_bias,
+                        modelParams.fc,
+                        modelParams.fc_bias,
+                        {
+                          maxFeePerGas: feeData.maxFeePerGas,
+                          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+                        },
+                      )
+
+                      const gasLimit = gasEstimate.mul(120).div(100)
+                      console.log(`Estimated gas limit: ${gasEstimate.toString()}, Setting to: ${gasLimit.toString()}`)
 
                       const tx = await contract.mint(
                         modelParams.conv1,
@@ -271,17 +291,17 @@ export default function Page() {
                         modelParams.conv2_bias,
                         modelParams.fc,
                         modelParams.fc_bias,
-                        { 
-                          maxFeePerGas: ethers.utils.parseUnits("100", "gwei"),
-                          maxPriorityFeePerGas: ethers.utils.parseUnits("2", "gwei"),
-                          gasLimit: 100000000,
+                        {
+                          maxFeePerGas: feeData.maxFeePerGas,
+                          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+                          gasLimit: gasLimit,
                         },
                       )
 
                       const receipt = await tx.wait()
-                      const mintEvent = receipt.events?.find((e: any) => e.event === "Transfer")
-                      const newId = mintEvent?.args?.[2].toString()
-
+                      const hexId = receipt.logs[0].topics[3]
+                      const newId = ethers.BigNumber.from(hexId).toString()
+                                            
                       setNewNftId(newId)
                       toast({
                         title: "Success",
@@ -299,16 +319,18 @@ export default function Page() {
                     }
                   }}
                   disabled={!modelParams || isMinting || !account || !isCorrectNetwork}
-                  title={!account 
-                    ? "Please connect your wallet first" 
-                    : !isCorrectNetwork 
-                    ? "Please switch to the correct network" 
-                    : !modelParams 
-                    ? "Please upload model parameters first"
-                    : ""}
+                  title={
+                    !account
+                      ? "Please connect your wallet first"
+                      : !isCorrectNetwork
+                        ? "Please switch to the correct network"
+                        : !modelParams
+                          ? "Please upload model parameters first"
+                          : ""
+                  }
                   className="h-11 px-8 whitespace-nowrap flex-1"
                 >
-                  {isMinting ? "Minting..." : "Mint NFT"}
+                  {isMinting ? "Minting..." : newNftId ? `NFT ID: ${newNftId}` : "Mint NFT"}
                 </Button>
               </div>
             </div>
@@ -354,21 +376,22 @@ export default function Page() {
               rel="noopener noreferrer"
               className="hover:text-primary transition-colors inline-flex items-center gap-1 justify-center"
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="currentColor"
-              >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
               </svg>
               View project on GitHub
             </a>
-            <div>Model parameters can be generated using <a
-              href="https://github.com/scottham/OnChainHRDigitPredict/blob/main/model/train.py"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline font-mono text-sm"
-            >model/train.py</a></div>
+            <div>
+              Model parameters can be generated using{" "}
+              <a
+                href="https://github.com/scottham/OnChainHRDigitPredict/blob/main/model/train.py"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline font-mono text-sm"
+              >
+                model/train.py
+              </a>
+            </div>
           </div>
         </CardFooter>
       </Card>
