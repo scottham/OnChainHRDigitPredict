@@ -3,7 +3,7 @@
 ## Run locally
 Requirements: Node >= 20
 
-Fill REACT_APP_RPC_URL and REACT_APP_CONTRACT_ADDRESS in .env
+Fill NEXT_PUBLIC_RPC_URL and NEXT_PUBLIC_CONTRACT_ADDRESS in .env
 
 ```
 npm install
