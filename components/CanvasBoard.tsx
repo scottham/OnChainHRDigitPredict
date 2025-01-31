@@ -117,7 +117,7 @@ const CanvasBoard = forwardRef((props, ref) => {
   }
 
   return (
-    <div className="relative w-[280px] h-[280px] touch-none">
+    <div className="relative w-full aspect-square touch-none">
       <canvas
         ref={canvasRef}
         width={28}

@@ -27,4 +27,48 @@ export const CONTRACT_ABI = [
     "stateMutability": "view",
     "type": "function"
   },
+  {
+    "inputs": [
+      {
+        "internalType": "int256[][][][]",
+        "name": "conv1Weight",
+        "type": "int256[][][][]"
+      },
+      {
+        "internalType": "int256[]",
+        "name": "conv1Bias",
+        "type": "int256[]"
+      },
+      {
+        "internalType": "int256[][][][]",
+        "name": "conv2Weight",
+        "type": "int256[][][][]"
+      },
+      {
+        "internalType": "int256[]",
+        "name": "conv2Bias",
+        "type": "int256[]"
+      },
+      {
+        "internalType": "int256[][]",
+        "name": "fcWeight",
+        "type": "int256[][]"
+      },
+      {
+        "internalType": "int256[]",
+        "name": "fcBias",
+        "type": "int256[]"
+      }
+    ],
+    "name": "mint",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
 ];
