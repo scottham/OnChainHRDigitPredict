@@ -160,8 +160,8 @@ export default function Page() {
             <label htmlFor="nftId" className="block text-sm font-medium mb-2">
               NFT ID for Inference:
             </label>
-            <div className="flex gap-4 items-start">
-              <div className="w-[30%]">
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              <div className="w-full sm:w-[30%]">
                 <Input
                   id="nftId"
                   type="number"
