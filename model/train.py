@@ -13,17 +13,17 @@ class MNISTNet(nn.Module):
     def __init__(self):
         super(MNISTNet, self).__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(1, 5, kernel_size=3, padding=1),
+            nn.Conv2d(1, 3, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
         self.conv2 = nn.Sequential(
-            nn.Conv2d(5, 10, kernel_size=3, padding=1),
+            nn.Conv2d(3, 6, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
         self.fc = nn.Sequential(
-            nn.Linear(10 * 7 * 7, 10),
+            nn.Linear(6 * 7 * 7, 10),
         )
 
     def forward(self, x):
@@ -118,7 +118,7 @@ def main(test_scale_factor):
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
     best_accuracy = 0.0
-    epochs = 10
+    epochs = 50
     best_model = quant_scale(deepcopy(model), scale_factor=test_scale_factor)
     for epoch in range(1, epochs + 1):
         train(model, device, train_loader, optimizer, epoch)

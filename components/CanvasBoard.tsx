@@ -14,7 +14,10 @@ const CanvasBoard = forwardRef((props, ref) => {
       if (ctx) {
         ctx.lineWidth = 1
         ctx.lineCap = "round"
-        ctx.strokeStyle = "#000000"
+        ctx.strokeStyle = "#FFFFFF"
+        // Fill with black background
+        ctx.fillStyle = "#000000"
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
       }
     }
   }
@@ -26,6 +29,9 @@ const CanvasBoard = forwardRef((props, ref) => {
         const ctx = canvas.getContext("2d")
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height)
+          // Fill with black background after clearing
+          ctx.fillStyle = "#000000"
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
         }
       }
     },
@@ -116,4 +122,3 @@ const CanvasBoard = forwardRef((props, ref) => {
 CanvasBoard.displayName = "CanvasBoard"
 
 export default CanvasBoard
-

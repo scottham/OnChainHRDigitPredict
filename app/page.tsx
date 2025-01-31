@@ -27,21 +27,40 @@ export default function Page() {
     if (!canvasRef.current) return
 
     const imgData = canvasRef.current.getCanvasData()
-    console.log(imgData)
-    const downsampled = downsampleTo16x16(imgData)
-    const input256 = downsampled.map((v: number) => Math.round(v))
-    console.log(input256)
+    // Convert to grayscale and normalize to 0-255 range
+    const grayscaleData = []
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      // Convert RGBA to grayscale using standard weights
+      const gray = Math.round(
+        imgData.data[i] * 0.299 +     // Red
+        imgData.data[i + 1] * 0.587 + // Green
+        imgData.data[i + 2] * 0.114   // Blue
+      )
+      grayscaleData.push(gray)
+    }
+    // Reshape into 28x28 2D array
+    const matrix28x28 = []
+    for (let i = 0; i < 28; i++) {
+      const row = []
+      for (let j = 0; j < 28; j++) {
+        row.push(grayscaleData[i * 28 + j])
+      }
+      matrix28x28.push(row)
+    }
+    // matrix28x28 is now a 28x28 2D array of grayscale values (0-255)
+    const input28x28 = matrix28x28
+    console.log(input28x28)
     try {
       setIsLoading(true)
       setPrediction(null)
       setInferenceTime(null)
 
       const provider = new ethers.providers.JsonRpcProvider(RPC_URL)
-
+      console.log(RPC_URL)
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider)
 
       const startTime = performance.now()
-      const result = await contract.predictDigit(1, input256)
+      const result = await contract.inference(1, input28x28)
       const endTime = performance.now()
       const timeElapsed = Math.round(endTime - startTime)
 
@@ -87,43 +106,3 @@ export default function Page() {
     </div>
   )
 }
-
-function downsampleTo16x16(imgData: ImageData) {
-  const { width, height, data } = imgData
-  const out = new Array(16 * 16).fill(0)
-  const blockW = width / 16
-  const blockH = height / 16
-
-  for (let row = 0; row < 16; row++) {
-    for (let col = 0; col < 16; col++) {
-      let sum = 0
-      let count = 0
-      const rStart = Math.floor(row * blockH)
-      const rEnd = Math.floor((row + 1) * blockH)
-      const cStart = Math.floor(col * blockW)
-      const cEnd = Math.floor((col + 1) * blockW)
-
-      for (let rr = rStart; rr < rEnd; rr++) {
-        for (let cc = cStart; cc < cEnd; cc++) {
-          const idx = (rr * width + cc) * 4
-          const r = data[idx],
-            g = data[idx + 1],
-            b = data[idx + 2],
-            a = data[idx + 3]
-          if (a > 0) {
-            const gray = 255 - (r + g + b) / 3
-            sum += gray
-            count++
-          }
-        }
-      }
-      let avg = 0
-      if (count > 0) {
-        avg = sum / count
-      }
-      out[row * 16 + col] = avg
-    }
-  }
-  return out
-}
-
