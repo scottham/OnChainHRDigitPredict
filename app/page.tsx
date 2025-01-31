@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { ethers } from "ethers"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import CanvasBoard from "@/components/CanvasBoard"
 import { CONTRACT_ADDRESS, CONTRACT_ABI, RPC_URL } from "@/lib/contractConfig"
 import Image from "next/image"
@@ -14,6 +15,7 @@ export default function Page() {
   const [prediction, setPrediction] = useState<string | null>(null)
   const [inferenceTime, setInferenceTime] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [nftId, setNftId] = useState("1")
 
   const handleClear = () => {
     if (canvasRef.current) {
@@ -60,7 +62,7 @@ export default function Page() {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider)
 
       const startTime = performance.now()
-      const result = await contract.inference(1, input28x28)
+      const result = await contract.inference(Number(nftId), input28x28)
       const endTime = performance.now()
       const timeElapsed = Math.round(endTime - startTime)
 
@@ -82,6 +84,17 @@ export default function Page() {
         </CardHeader>
         <CardContent>
           <p className="mb-4">Write a digit (0-9) on the canvas below, then click "Predict" to run inference</p>
+          <div className="mb-4">
+            <label htmlFor="nftId" className="block text-sm font-medium mb-2">NFT ID for Inference:</label>
+            <Input
+              id="nftId"
+              type="number"
+              min="1"
+              value={nftId}
+              onChange={(e) => setNftId(e.target.value)}
+              className="w-full"
+            />
+          </div>
           <CanvasBoard ref={canvasRef} />
           <div className="mt-4 flex justify-between">
             <Button onClick={handleClear} variant="outline">
