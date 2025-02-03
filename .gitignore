@@ -2,8 +2,11 @@
 /node_modules
 /model/checkpoints
 /model/data
+/model/test_data
+/model/scripts_for_contracts_and_test/artifacts
 # misc
 .DS_Store
 .env
 # dev
 /.next
+/.idea

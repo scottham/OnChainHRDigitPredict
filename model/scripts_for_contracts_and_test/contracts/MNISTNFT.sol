@@ -122,7 +122,7 @@ contract MNISTNFT is ERC721 {
         for (uint256 ic = 0; ic < c; ic++) {
             for (uint256 ih = 0; ih < h; ih++) {
                 for (uint256 iw = 0; iw < w; iw++) {
-                    // 单值 ReLU
+                    // ReLU
                     inputData[ic][ih][iw] = fcContract.relu(inputData[ic][ih][iw]);
                 }
             }

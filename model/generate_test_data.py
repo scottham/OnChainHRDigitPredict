@@ -31,7 +31,7 @@ def prepare_mnist_data():
         'labels': test_labels
     }
     
-    with open('./test/mnist_test_data.json', 'w') as f:
+    with open('./model/test_data/mnist_test_data.json', 'w') as f:
         json.dump(test_data, f, indent=4)
     
     print(f"Generated test data with {len(test_images)} images")
