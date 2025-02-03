@@ -17,7 +17,7 @@ def deploy_contracts():
     w3 = Web3(Web3.HTTPProvider('http://localhost:8545'))
 
     # Get account from private key
-    private_key = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+    private_key = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' # First account in foundry localnode
     account = w3.eth.account.from_key(private_key)
     w3.eth.default_account = account.address
 
