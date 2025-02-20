@@ -1,5 +1,20 @@
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
-export const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x7a198E9ee6628D0122ffAC2F88f5589D276aD80f";
+export type NetworkConfig = {
+  name: string;
+  rpcUrl: string;
+  contractAddress: string;
+};
+
+export const networks: NetworkConfig[] = [
+  {
+    name: 'Monad Testnet',
+    rpcUrl: process.env.NEXT_PUBLIC_MONADTESTNET_RPC_URL || '',
+    contractAddress: process.env.NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS || '',
+  }
+
+];
+
+// Default to first network
+export const DEFAULT_NETWORK = networks[0];
 
 
 export const CONTRACT_ABI = [

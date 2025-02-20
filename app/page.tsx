@@ -7,7 +7,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import CanvasBoard from "@/components/CanvasBoard"
-import { CONTRACT_ADDRESS, CONTRACT_ABI, RPC_URL } from "@/lib/contractConfig"
+import { CONTRACT_ABI, networks, NetworkConfig, DEFAULT_NETWORK } from "@/lib/contractConfig"
 import Image from "next/image"
 import monadLogo from "@/public/Monad Logo - Default - Logo Mark 1.png"
 import { toast } from "@/components/ui/use-toast"
@@ -21,6 +21,7 @@ export default function Page() {
   const [account, setAccount] = useState<string | null>(null)
   const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null)
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false)
+  const [selectedNetwork, setSelectedNetwork] = useState<NetworkConfig>(DEFAULT_NETWORK)
   const [isMinting, setIsMinting] = useState(false)
   const [newNftId, setNewNftId] = useState<string | null>(null)
   const [modelParams, setModelParams] = useState<any>(null)
@@ -35,11 +36,24 @@ export default function Page() {
   const checkNetwork = async (web3Provider: ethers.providers.Web3Provider) => {
     try {
       const network = await web3Provider.getNetwork()
-      const targetNetwork = await new ethers.providers.JsonRpcProvider(RPC_URL).getNetwork()
+      const targetNetwork = await new ethers.providers.JsonRpcProvider(selectedNetwork.rpcUrl).getNetwork()
+      console.log("network", network, "targetNetwork", targetNetwork)
       return network.chainId === targetNetwork.chainId
     } catch (err) {
       console.error("Error checking network:", err)
       return false
+    }
+  }
+
+  // Function to handle network change
+  const handleNetworkChange = (networkName: string) => {
+    const network = networks.find(n => n.name === networkName)
+    if (network) {
+      setSelectedNetwork(network)
+      // Re-check network connection
+      if (provider) {
+        checkNetwork(provider).then(setIsCorrectNetwork)
+      }
     }
   }
 
@@ -84,9 +98,9 @@ export default function Page() {
       setInferenceTime(null)
 
       // Use connected wallet if available, otherwise fallback to RPC
-      const contractProvider = provider || new ethers.providers.JsonRpcProvider(RPC_URL)
+      const contractProvider = provider || new ethers.providers.JsonRpcProvider(selectedNetwork.rpcUrl)
 
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, contractProvider)
+      const contract = new ethers.Contract(selectedNetwork.contractAddress, CONTRACT_ABI, contractProvider)
 
       const startTime = performance.now()
       const result = await contract.inference(Number(nftId), input28x28)
@@ -121,7 +135,7 @@ export default function Page() {
                 // Check if on correct network
                 const correctNetwork = await checkNetwork(web3Provider)
                 if (!correctNetwork) {
-                  const targetNetwork = await new ethers.providers.JsonRpcProvider(RPC_URL).getNetwork()
+                  const targetNetwork = await new ethers.providers.JsonRpcProvider(selectedNetwork.rpcUrl).getNetwork()
                   alert(
                     `Please switch to ${targetNetwork.name || "the correct network"} (Chain ID: ${targetNetwork.chainId}) in your wallet`,
                   )
@@ -156,6 +170,23 @@ export default function Page() {
         </CardHeader>
         <CardContent className="px-6 py-4">
           <p className="mb-4">Write a digit (0-9) on the canvas below, then click "Predict" to run inference</p>
+          <div className="mb-4">
+            <label htmlFor="network" className="block text-sm font-medium mb-2">
+              Network:
+            </label>
+            <select
+              id="network"
+              className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={selectedNetwork.name}
+              onChange={(e) => handleNetworkChange(e.target.value)}
+            >
+              {networks.map((network) => (
+                <option key={network.name} value={network.name}>
+                  {network.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="mb-4">
             <label htmlFor="nftId" className="block text-sm font-medium mb-2">
               NFT ID for Inference:
@@ -266,7 +297,7 @@ export default function Page() {
 
                       setIsMinting(true)
                       const signer = provider!.getSigner()
-                      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
+                      const contract = new ethers.Contract(selectedNetwork.contractAddress, CONTRACT_ABI, signer)
 
                       const gasEstimate = await contract.estimateGas.mint(
                         modelParams.conv1,
@@ -367,7 +398,7 @@ export default function Page() {
                 </div>
               )}
             </div>
-            {inferenceTime !== null && <div>Inference Time (Monad Devnet): {inferenceTime}ms</div>}
+            {inferenceTime !== null && <div>Inference Time ({selectedNetwork.name}): {inferenceTime}ms</div>}
           </div>
           <div className="w-full mt-4 pt-4 border-t text-center text-sm text-muted-foreground flex flex-col gap-2">
             <a
