@@ -20,10 +20,10 @@ npm run dev
 
 ![netBackBone](public/backbone.png)
 
-## Contracts (Verified on monadDevnet)
+## Contracts (On monad Testnet)
 
-Convolution2D: 0xeB2A7ccD08618bFF7E28C3C2E00cddd103ecf7e6
+Convolution2D: 0xe40e272467F385ED0E63671Eb452c8F65731F56f
 
 FullyConnectedLayer: 0x3Fe9261175817a351bd2b91C0f0637E22697c0Da
 
-MNIST NFT: 0xAbd36D72EEAb1BF8F662a85Eca86DC502666fAAE
+MNIST NFT: 0x9B531106aaD0225c78fcaA6cEC550d66AC466759
