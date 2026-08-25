@@ -10,3 +10,20 @@
 # dev
 /.next
 /.idea
+
+# foundry
+/model/scripts_for_contracts_and_test/out
+/model/scripts_for_contracts_and_test/cache
+/model/scripts_for_contracts_and_test/node_modules
+
+# python
+__pycache__/
+
+# typescript
+tsconfig.tsbuildinfo
+
+# local chain deployments are ephemeral; testnet ones are committed
+deployments.anvil.json
+
+# regenerable in seconds via model/make_fixture.py
+/fixtures
