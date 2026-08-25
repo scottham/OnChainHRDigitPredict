@@ -1,432 +1,425 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { ethers } from "ethers"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import CanvasBoard from "@/components/CanvasBoard"
-import { CONTRACT_ABI, networks, NetworkConfig, DEFAULT_NETWORK } from "@/lib/contractConfig"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Image from "next/image"
+import { ConnectButton } from "@rainbow-me/rainbowkit"
+import { useAccount, useChainId, usePublicClient, useSwitchChain, useWalletClient } from "wagmi"
+import { toast } from "sonner"
+import { Eraser, Sparkles, Loader2, AlertTriangle, ExternalLink, Upload, Cpu } from "lucide-react"
+
+import CanvasBoard, { type CanvasBoardHandle } from "@/components/CanvasBoard"
+import DigitPreview from "@/components/DigitPreview"
+import InferenceTraceView from "@/components/InferenceTrace"
+import { traceInference, type InferenceTrace } from "@/lib/trace"
+import { Button } from "@/components/ui/button"
+import {
+  CHAIN,
+  CONTRACT_ADDRESS,
+  DEFAULT_TOKEN_ID,
+  IS_CONFIGURED,
+  MNIST_NFT_ABI,
+  explorerAddress,
+} from "@/lib/contractConfig"
 import monadLogo from "@/public/Monad Logo - Default - Logo Mark 1.png"
-import { toast } from "@/components/ui/use-toast"
+
+type ContractState = "checking" | "ready" | "missing" | "unconfigured"
+
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 export default function Page() {
-  const canvasRef = useRef<any>(null)
-  const [prediction, setPrediction] = useState<string | null>(null)
-  const [inferenceTime, setInferenceTime] = useState<number | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [nftId, setNftId] = useState("1")
-  const [account, setAccount] = useState<string | null>(null)
-  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null)
-  const [isCorrectNetwork, setIsCorrectNetwork] = useState(false)
-  const [selectedNetwork, setSelectedNetwork] = useState<NetworkConfig>(DEFAULT_NETWORK)
-  const [isMinting, setIsMinting] = useState(false)
-  const [newNftId, setNewNftId] = useState<string | null>(null)
+  const canvasRef = useRef<CanvasBoardHandle>(null)
+  const publicClient = usePublicClient()
+  const { data: walletClient } = useWalletClient()
+  const { address, isConnected } = useAccount()
+  const chainId = useChainId()
+  const { switchChain } = useSwitchChain()
+
+  const [contractState, setContractState] = useState<ContractState>("checking")
+  const [preview, setPreview] = useState<number[][] | null>(null)
+  const [prediction, setPrediction] = useState<number | null>(null)
+  const [latency, setLatency] = useState<number | null>(null)
+  const [predicting, setPredicting] = useState(false)
+  const [brush, setBrush] = useState(26)
+  const [tokenId, setTokenId] = useState(DEFAULT_TOKEN_ID.toString())
+
+  const [trace, setTrace] = useState<InferenceTrace | null>(null)
+  const [tracing, setTracing] = useState(false)
+  const [traceError, setTraceError] = useState<string | null>(null)
+  const [tracedInput, setTracedInput] = useState<number[][] | null>(null)
+
+  const [modelFile, setModelFile] = useState<string | null>(null)
   const [modelParams, setModelParams] = useState<any>(null)
-  const [fileName, setFileName] = useState<string | null>(null)
+  const [minting, setMinting] = useState(false)
 
-  const formatFileName = (name: string) => {
-    if (name.length <= 20) return name
-    return "..." + name.slice(-20)
-  }
+  const onWrongChain = isConnected && chainId !== CHAIN.id
 
-  // Function to check if connected to correct network
-  const checkNetwork = async (web3Provider: ethers.providers.Web3Provider) => {
-    try {
-      const network = await web3Provider.getNetwork()
-      const targetNetwork = await new ethers.providers.JsonRpcProvider(selectedNetwork.rpcUrl).getNetwork()
-      console.log("network", network, "targetNetwork", targetNetwork)
-      return network.chainId === targetNetwork.chainId
-    } catch (err) {
-      console.error("Error checking network:", err)
-      return false
+  /**
+   * Confirm the contract still exists before anyone draws.
+   *
+   * Monad's testnet was re-genesised on 2025-12-16 and wiped every contract
+   * deployed before it. Without this check the failure surfaces as an opaque
+   * "call reverted" only after the user has drawn something.
+   */
+  useEffect(() => {
+    if (!IS_CONFIGURED) {
+      setContractState("unconfigured")
+      return
     }
-  }
-
-  // Function to handle network change
-  const handleNetworkChange = (networkName: string) => {
-    const network = networks.find(n => n.name === networkName)
-    if (network) {
-      setSelectedNetwork(network)
-      // Re-check network connection
-      if (provider) {
-        checkNetwork(provider).then(setIsCorrectNetwork)
-      }
+    if (!publicClient) return
+    let cancelled = false
+    publicClient
+      .getBytecode({ address: CONTRACT_ADDRESS })
+      .then((code) => {
+        if (cancelled) return
+        setContractState(code && code !== "0x" ? "ready" : "missing")
+      })
+      .catch(() => !cancelled && setContractState("missing"))
+    return () => {
+      cancelled = true
     }
-  }
+  }, [publicClient])
 
-  const handleClear = () => {
-    if (canvasRef.current) {
-      canvasRef.current.clearCanvas()
-    }
+  const handleClear = useCallback(() => {
+    canvasRef.current?.clearCanvas()
     setPrediction(null)
-    setInferenceTime(null)
-  }
+    setLatency(null)
+    setTrace(null)
+    setTraceError(null)
+    setTracedInput(null)
+  }, [])
 
-  const handlePredict = async () => {
-    if (!canvasRef.current) return
+  /** Inference is a view call -- no wallet, no gas, no signature. */
+  const handlePredict = useCallback(async () => {
+    const grid = canvasRef.current?.getProcessedInput()
+    if (!grid) {
+      toast.warning("Draw a digit first")
+      return
+    }
+    if (!publicClient) return
 
-    const imgData = canvasRef.current.getCanvasData()
-    // Convert to grayscale and normalize to 0-255 range
-    const grayscaleData = []
-    for (let i = 0; i < imgData.data.length; i += 4) {
-      // Convert RGBA to grayscale using standard weights
-      const gray = Math.round(
-        imgData.data[i] * 0.299 + // Red
-          imgData.data[i + 1] * 0.587 + // Green
-          imgData.data[i + 2] * 0.114, // Blue
-      )
-      grayscaleData.push(gray)
-    }
-    // Reshape into 28x28 2D array
-    const matrix28x28 = []
-    for (let i = 0; i < 28; i++) {
-      const row = []
-      for (let j = 0; j < 28; j++) {
-        row.push(grayscaleData[i * 28 + j])
-      }
-      matrix28x28.push(row)
-    }
-    // matrix28x28 is now a 28x28 2D array of grayscale values (0-255)
-    const input28x28 = matrix28x28
-    console.log(input28x28)
+    setPredicting(true)
+    setPrediction(null)
     try {
-      setIsLoading(true)
-      setPrediction(null)
-      setInferenceTime(null)
+      const started = performance.now()
+      const result = (await publicClient.readContract({
+        address: CONTRACT_ADDRESS,
+        abi: MNIST_NFT_ABI,
+        functionName: "inference",
+        args: [BigInt(tokenId), grid.map((row) => row.map((v) => BigInt(v)))],
+      })) as bigint
+      setLatency(Math.round(performance.now() - started))
+      setPrediction(Number(result))
 
-      // Use connected wallet if available, otherwise fallback to RPC
-      const contractProvider = provider || new ethers.providers.JsonRpcProvider(selectedNetwork.rpcUrl)
-
-      const contract = new ethers.Contract(selectedNetwork.contractAddress, CONTRACT_ABI, contractProvider)
-
-      const startTime = performance.now()
-      const result = await contract.inference(Number(nftId), input28x28)
-      const endTime = performance.now()
-      const timeElapsed = Math.round(endTime - startTime)
-
-      setPrediction(result.toString())
-      setInferenceTime(timeElapsed)
-      setIsLoading(false)
-    } catch (err) {
-      console.error(err)
-      alert("Contract call failed. Check console.")
-      setIsLoading(false)
+      // The trace is ~2 MB and takes about a second, so it runs after the
+      // answer is already on screen rather than delaying it.
+      setTracing(true)
+      setTraceError(null)
+      setTracedInput(grid)
+      traceInference(publicClient, BigInt(tokenId), grid)
+        .then(setTrace)
+        .catch((err: any) => {
+          setTrace(null)
+          setTraceError(
+            `Could not trace this call: ${(err?.message ?? "unknown error").split("\n")[0]}. ` +
+            `The prediction above is unaffected.`
+          )
+        })
+        .finally(() => setTracing(false))
+    } catch (err: any) {
+      const detail: string = err?.shortMessage || err?.message || "unknown error"
+      if (/Token does not exist/.test(detail)) {
+        toast.error(`Token ${tokenId} has no model`, {
+          description: "No weights are stored under this id. Try token 1, or mint a model below.",
+        })
+      } else {
+        toast.error("Inference failed", { description: detail.split("\n")[0] })
+      }
+    } finally {
+      setPredicting(false)
     }
-  }
+  }, [publicClient, tokenId])
+
+  const handleMint = useCallback(async () => {
+    if (!walletClient || !address) return
+    if (!modelParams) {
+      toast.warning("Upload a parameters file first")
+      return
+    }
+    setMinting(true)
+    try {
+      const toBig = (v: any): any => (Array.isArray(v) ? v.map(toBig) : BigInt(v))
+      const hash = await walletClient.writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: MNIST_NFT_ABI,
+        functionName: "mint",
+        args: [
+          toBig(modelParams.conv1),
+          toBig(modelParams.conv1_bias),
+          toBig(modelParams.conv2),
+          toBig(modelParams.conv2_bias),
+          toBig(modelParams.fc),
+          toBig(modelParams.fc_bias),
+        ],
+        chain: CHAIN,
+        account: address,
+      })
+      toast.info("Mint submitted", { description: short(hash) })
+
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash })
+      const minted = BigInt(receipt.logs[0].topics[3]!)
+      setTokenId(minted.toString())
+      toast.success(`Minted token ${minted}`, { description: "Selected for inference." })
+    } catch (err: any) {
+      const detail: string = err?.shortMessage || err?.message || "unknown error"
+      toast.error("Mint failed", {
+        description: /int8/i.test(detail)
+          ? "Weights fall outside int8. Regenerate them with the current train.py."
+          : detail.split("\n")[0],
+      })
+    } finally {
+      setMinting(false)
+    }
+  }, [walletClient, address, modelParams, publicClient])
 
   return (
-    <div className="flex min-h-svh items-center justify-center">
-      <Card className="w-full max-w-2xl p-2">
-        <CardHeader className="flex flex-row items-center justify-between px-6 py-4">
-          <CardTitle>On-Chain Handwritten Digit Recognition Test</CardTitle>
-          <Button
-            onClick={async () => {
-              try {
-                if (!window.ethereum) {
-                  alert("Please install MetaMask!")
-                  return
-                }
-                const web3Provider = new ethers.providers.Web3Provider(window.ethereum)
-                await window.ethereum.request({ method: "eth_requestAccounts" })
-
-                // Check if on correct network
-                const correctNetwork = await checkNetwork(web3Provider)
-                if (!correctNetwork) {
-                  const targetNetwork = await new ethers.providers.JsonRpcProvider(selectedNetwork.rpcUrl).getNetwork()
-                  alert(
-                    `Please switch to ${targetNetwork.name || "the correct network"} (Chain ID: ${targetNetwork.chainId}) in your wallet`,
-                  )
-                  setIsCorrectNetwork(false)
-                  const signer = web3Provider.getSigner()
-                  const address = await signer.getAddress()
-                  setProvider(web3Provider)
-                  setAccount(address)
-                  return
-                }
-
-                setIsCorrectNetwork(true)
-                const signer = web3Provider.getSigner()
-                const address = await signer.getAddress()
-                setProvider(web3Provider)
-                setAccount(address)
-              } catch (err) {
-                console.error(err)
-                alert("Failed to connect wallet")
-              }
-            }}
-            variant="outline"
-            size="sm"
-            className={!isCorrectNetwork && account ? "bg-red-100 hover:bg-red-200" : ""}
-          >
-            {account
-              ? isCorrectNetwork
-                ? `${account.slice(0, 6)}...${account.slice(-4)}`
-                : "Wrong Network"
-              : "Connect Wallet"}
-          </Button>
-        </CardHeader>
-        <CardContent className="px-6 py-4">
-          <p className="mb-4">Write a digit (0-9) on the canvas below, then click "Predict" to run inference</p>
-          <div className="mb-4">
-            <label htmlFor="network" className="block text-sm font-medium mb-2">
-              Network:
-            </label>
-            <select
-              id="network"
-              className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={selectedNetwork.name}
-              onChange={(e) => handleNetworkChange(e.target.value)}
-            >
-              {networks.map((network) => (
-                <option key={network.name} value={network.name}>
-                  {network.name}
-                </option>
-              ))}
-            </select>
+    <div className="min-h-svh bg-gradient-to-b from-background via-background to-violet-950/20">
+      <div className="mx-auto flex min-h-svh max-w-6xl flex-col px-4 py-6 sm:px-6">
+        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Image src={monadLogo} alt="" width={36} height={36} className="rounded-lg" />
+            <div>
+              <h1 className="text-lg font-semibold leading-tight tracking-tight sm:text-xl">
+                On-Chain Digit Recognition
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Every multiply-accumulate runs inside an EVM contract
+              </p>
+            </div>
           </div>
-          <div className="mb-4">
-            <label htmlFor="nftId" className="block text-sm font-medium mb-2">
-              NFT ID for Inference:
-            </label>
-            <div className="flex flex-col sm:flex-row gap-4 items-start">
-              <div className="w-full sm:w-[30%]">
-                <Input
-                  id="nftId"
-                  type="number"
-                  min="1"
-                  value={nftId}
-                  onChange={(e) => setNftId(e.target.value)}
-                  className="w-full h-11"
+          <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+        </header>
+
+        {contractState === "missing" && (
+          <Banner tone="danger" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
+            No contract code at <code className="font-mono">{short(CONTRACT_ADDRESS)}</code> on {CHAIN.name}.
+            The testnet may have been reset again — redeploy and update{" "}
+            <code className="font-mono">NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS</code>.
+          </Banner>
+        )}
+        {contractState === "unconfigured" && (
+          <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
+            <code className="font-mono">NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS</code> is not set.
+          </Banner>
+        )}
+        {onWrongChain && (
+          <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
+            Wallet is on the wrong network.
+            <button
+              onClick={() => switchChain({ chainId: CHAIN.id })}
+              className="ml-2 underline underline-offset-4 hover:no-underline"
+            >
+              Switch to {CHAIN.name}
+            </button>
+          </Banner>
+        )}
+
+        <main className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
+            <div className="mb-4 flex items-baseline justify-between">
+              <h2 className="font-medium">Draw a digit</h2>
+              <span className="text-xs text-muted-foreground">0 – 9</span>
+            </div>
+
+            <div className="mx-auto w-full max-w-[420px]">
+              <CanvasBoard ref={canvasRef} brushSize={brush} onStrokeEnd={setPreview} />
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              <label className="flex flex-1 items-center gap-3 text-xs text-muted-foreground">
+                Brush
+                <input
+                  type="range"
+                  min={12}
+                  max={44}
+                  value={brush}
+                  onChange={(e) => setBrush(Number(e.target.value))}
+                  className="h-1 flex-1 cursor-pointer accent-violet-500"
                 />
+              </label>
+              <Button variant="outline" size="sm" onClick={handleClear} className="gap-2">
+                <Eraser className="h-4 w-4" />
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                onClick={handlePredict}
+                disabled={predicting || contractState !== "ready"}
+                className="gap-2 bg-violet-600 hover:bg-violet-700"
+              >
+                {predicting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {predicting ? "Running on-chain…" : "Predict"}
+              </Button>
+            </div>
+
+            <p className="mt-3 text-xs text-muted-foreground">
+              Inference is a read-only call — no wallet, no gas, no signature.
+            </p>
+          </section>
+
+          <aside className="flex flex-col gap-6">
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
+              <h2 className="mb-4 font-medium">Prediction</h2>
+              <div className="flex items-center gap-5">
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-black/40">
+                  {predicting ? (
+                    <Loader2 className="h-7 w-7 animate-spin text-violet-400" />
+                  ) : prediction !== null ? (
+                    <span className="text-5xl font-semibold tabular-nums text-violet-300">{prediction}</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
+                <div className="min-w-0 space-y-2 text-xs">
+                  <Row label="Latency" value={latency !== null ? `${latency} ms` : "—"} />
+                  <Row label="Network" value={CHAIN.name} />
+                  <Row label="Token" value={`#${tokenId}`} />
+                </div>
               </div>
-              <div className="flex flex-1 justify-between gap-4">
-                <div className="flex-1">
-                  <Input
+
+              <div className="mt-5 border-t border-border/60 pt-4">
+                <p className="mb-2 text-xs text-muted-foreground">What the model receives (28×28)</p>
+                <DigitPreview grid={preview} />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
+              <h2 className="mb-3 flex items-center gap-2 font-medium">
+                <Cpu className="h-4 w-4 text-violet-400" />
+                Model
+              </h2>
+              <div className="space-y-2 text-xs">
+                <Row label="Architecture" value="2×conv + fc" />
+                <Row label="Weights" value="int8, on-chain" />
+                <Row label="Test accuracy" value="98.13%" />
+              </div>
+              {IS_CONFIGURED && (
+                <a
+                  href={explorerAddress(CONTRACT_ADDRESS)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 inline-flex items-center gap-1.5 font-mono text-xs text-violet-400 hover:text-violet-300"
+                >
+                  {short(CONTRACT_ADDRESS)}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+
+            <details className="group rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
+              <summary className="cursor-pointer list-none font-medium marker:content-none">
+                <span className="flex items-center justify-between">
+                  Mint your own model
+                  <span className="text-xs text-muted-foreground group-open:hidden">Advanced</span>
+                </span>
+              </summary>
+
+              <p className="mt-3 text-xs text-muted-foreground">
+                Upload the JSON produced by <code className="font-mono">model/train.py</code>. One transaction,
+                one confirmation.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-xs hover:border-violet-500/60 hover:bg-violet-500/5">
+                  <Upload className="h-4 w-4" />
+                  <span className="truncate">{modelFile ?? "Choose parameters JSON"}</span>
+                  <input
                     type="file"
                     accept=".json"
-                    id="file-upload"
                     className="hidden"
                     onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
                       try {
-                        const file = e.target.files?.[0]
-                        if (!file) {
-                          setFileName(null)
-                          setModelParams(null)
-                          return
-                        }
-
-                        setFileName(file.name)
-                        const reader = new FileReader()
-                        reader.onload = async (event) => {
-                          try {
-                            const params = JSON.parse(event.target?.result as string)
-                            setModelParams(params)
-                            toast({
-                              title: "Success",
-                              description: "Model parameters loaded successfully. Click 'Mint NFT' to proceed.",
-                            })
-                          } catch (err: any) {
-                            console.error(err)
-                            toast({
-                              title: "Error",
-                              description: "Failed to parse JSON file",
-                              variant: "destructive",
-                            })
-                            setModelParams(null)
-                            setFileName(null)
-                          }
-                        }
-                        reader.readAsText(file)
+                        const parsed = JSON.parse(await file.text())
+                        const required = ["conv1", "conv1_bias", "conv2", "conv2_bias", "fc", "fc_bias"]
+                        const missing = required.filter((k) => !(k in parsed))
+                        if (missing.length) throw new Error(`missing keys: ${missing.join(", ")}`)
+                        setModelParams(parsed)
+                        setModelFile(file.name)
+                        toast.success("Parameters loaded")
                       } catch (err: any) {
-                        console.error(err)
-                        toast({
-                          title: "Error",
-                          description: err.message || "Failed to read file",
-                          variant: "destructive",
-                        })
                         setModelParams(null)
-                        setFileName(null)
+                        setModelFile(null)
+                        toast.error("Could not read file", { description: err.message })
                       }
                     }}
                   />
-                  <Label
-                    htmlFor="file-upload"
-                    className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-6 py-2 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 w-full overflow-hidden"
-                  >
-                    <span className="truncate">{fileName ? formatFileName(fileName) : "Upload your parameters"}</span>
-                  </Label>
-                </div>
+                </label>
+
                 <Button
-                  onClick={async () => {
-                    try {
-                      if (!account) {
-                        toast({
-                          title: "Error",
-                          description: "Please connect your wallet first",
-                          variant: "destructive",
-                        })
-                        return
-                      }
-
-                      if (!isCorrectNetwork) {
-                        toast({
-                          title: "Error",
-                          description: "Please switch to the correct network",
-                          variant: "destructive",
-                        })
-                        return
-                      }
-
-                      if (!modelParams) {
-                        toast({
-                          title: "Error",
-                          description: "Please upload a model parameters file first",
-                          variant: "destructive",
-                        })
-                        return
-                      }
-
-                      const feeData = await provider!.getFeeData()
-                      console.log("Network suggested gas prices:", {
-                        maxFeePerGas: ethers.utils.formatUnits(feeData.maxFeePerGas || 0, "gwei"),
-                        maxPriorityFeePerGas: ethers.utils.formatUnits(feeData.maxPriorityFeePerGas || 0, "gwei"),
-                      })
-
-                      setIsMinting(true)
-                      const signer = provider!.getSigner()
-                      const contract = new ethers.Contract(selectedNetwork.contractAddress, CONTRACT_ABI, signer)
-
-                      const gasEstimate = await contract.estimateGas.mint(
-                        modelParams.conv1,
-                        modelParams.conv1_bias,
-                        modelParams.conv2,
-                        modelParams.conv2_bias,
-                        modelParams.fc,
-                        modelParams.fc_bias,
-                        {
-                          maxFeePerGas: feeData.maxFeePerGas,
-                          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
-                        },
-                      )
-
-                      const gasLimit = gasEstimate.mul(120).div(100)
-                      console.log(`Estimated gas limit: ${gasEstimate.toString()}, Setting to: ${gasLimit.toString()}`)
-
-                      const tx = await contract.mint(
-                        modelParams.conv1,
-                        modelParams.conv1_bias,
-                        modelParams.conv2,
-                        modelParams.conv2_bias,
-                        modelParams.fc,
-                        modelParams.fc_bias,
-                        {
-                          maxFeePerGas: feeData.maxFeePerGas,
-                          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
-                          gasLimit: gasLimit,
-                        },
-                      )
-
-                      const receipt = await tx.wait()
-                      const hexId = receipt.logs[0].topics[3]
-                      const newId = ethers.BigNumber.from(hexId).toString()
-                                            
-                      setNewNftId(newId)
-                      toast({
-                        title: "Success",
-                        description: `Successfully minted NFT with ID: ${newId}`,
-                      })
-                    } catch (err: any) {
-                      console.error(err)
-                      toast({
-                        title: "Error",
-                        description: err.message || "Failed to mint NFT",
-                        variant: "destructive",
-                      })
-                    } finally {
-                      setIsMinting(false)
-                    }
-                  }}
-                  disabled={!modelParams || isMinting || !account || !isCorrectNetwork}
-                  title={
-                    !account
-                      ? "Please connect your wallet first"
-                      : !isCorrectNetwork
-                        ? "Please switch to the correct network"
-                        : !modelParams
-                          ? "Please upload model parameters first"
-                          : ""
-                  }
-                  className="h-11 px-8 whitespace-nowrap flex-1"
+                  onClick={handleMint}
+                  disabled={!isConnected || onWrongChain || !modelParams || minting}
+                  className="w-full gap-2"
+                  size="sm"
                 >
-                  {isMinting ? "Minting..." : newNftId ? `NFT ID: ${newNftId}` : "Mint NFT"}
+                  {minting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {!isConnected ? "Connect wallet to mint" : minting ? "Minting…" : "Mint model NFT"}
                 </Button>
               </div>
-            </div>
-            {(isMinting || newNftId) && (
-              <div className="mt-2">
-                {isMinting && (
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="animate-spin">
-                      <Image src={monadLogo || "/placeholder.svg"} alt="Minting..." width={16} height={16} />
-                    </div>
-                    <span>Minting in progress...</span>
-                  </div>
-                )}
-                {newNftId && <div className="text-sm text-green-600">Successfully minted NFT with ID: {newNftId}</div>}
-              </div>
-            )}
-          </div>
-          <CanvasBoard ref={canvasRef} />
-          <div className="mt-4 flex justify-between">
-            <Button onClick={handleClear} variant="outline">
-              Clear
-            </Button>
-            <Button onClick={handlePredict}>Predict</Button>
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col items-start gap-4 w-full px-6 py-4">
-          <div className="flex flex-col w-full gap-2">
-            <div className="flex items-center">
-              <strong>Prediction Result:</strong>
-              <span className="ml-2">{prediction}</span>
-              {isLoading && (
-                <div className="ml-2 animate-spin">
-                  <Image src={monadLogo || "/placeholder.svg"} alt="Loading..." width={20} height={20} />
-                </div>
-              )}
-            </div>
-            {inferenceTime !== null && <div>Inference Time ({selectedNetwork.name}): {inferenceTime}ms</div>}
-          </div>
-          <div className="w-full mt-4 pt-4 border-t text-center text-sm text-muted-foreground flex flex-col gap-2">
-            <a
-              href="https://github.com/scottham/OnChainHRDigitPredict"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-primary transition-colors inline-flex items-center gap-1 justify-center"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-              </svg>
-              View project on GitHub
-            </a>
-            <div>
-              Model parameters can be generated using{" "}
-              <a
-                href="https://github.com/scottham/OnChainHRDigitPredict/blob/main/model/train.py"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline font-mono text-sm"
-              >
-                model/train.py
-              </a>
-            </div>
-          </div>
-        </CardFooter>
-      </Card>
+            </details>
+          </aside>
+        </main>
+
+        <div className="mt-6">
+          <InferenceTraceView
+            input={tracedInput}
+            trace={trace}
+            loading={tracing}
+            error={traceError}
+          />
+        </div>
+
+        <footer className="mt-8 border-t border-border/60 pt-4 text-center text-xs text-muted-foreground">
+          <a
+            href="https://github.com/scottham/OnChainHRDigitPredict"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground"
+          >
+            Source on GitHub
+          </a>
+        </footer>
+      </div>
     </div>
   )
 }
 
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="truncate font-medium tabular-nums">{value}</span>
+    </div>
+  )
+}
+
+function Banner({
+  tone,
+  icon,
+  children,
+}: {
+  tone: "danger" | "warning"
+  icon: React.ReactNode
+  children: React.ReactNode
+}) {
+  const styles =
+    tone === "danger"
+      ? "border-red-500/40 bg-red-500/10 text-red-200"
+      : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+  return (
+    <div className={`mb-6 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${styles}`}>
+      {icon}
+      <div>{children}</div>
+    </div>
+  )
+}

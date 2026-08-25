@@ -55,28 +55,10 @@ contract Convolution2D {
         for (uint oc = 0; oc < outChannels; oc++) {
             for (uint oh = 0; oh < outHeight; oh++) {
                 for (uint ow = 0; ow < outWidth; ow++) {
-                    int sumVal = 0;
-
-
                     int baseH = int(oh * stride) - int(padding);
                     int baseW = int(ow * stride) - int(padding);
 
-
-                    for (uint ic = 0; ic < inChannels; ic++) {
-                        for (uint kh = 0; kh < kernelSize; kh++) {
-                            for (uint kw = 0; kw < kernelSize; kw++) {
-
-                                int curH = baseH + int(kh);
-                                int curW = baseW + int(kw);
-
-
-                                if (curH >= 0 && curH < int(inHeight) && curW >= 0 && curW < int(inWidth)) {
-                                    sumVal += inputData[ic][uint(curH)][uint(curW)] * kernel[oc][ic][kh][kw];
-                                }
-                            }
-                        }
-                    }
-
+                    int sumVal = _accumulateWindow(inputData, kernel, oc, baseH, baseW, kernelSize);
                     sumVal += bias[oc];
 
                     outputData[oc][oh][ow] = sumVal;
@@ -85,6 +67,55 @@ contract Convolution2D {
         }
 
         return outputData;
+    }
+
+    /**
+     * @dev Inner accumulation for one output position. Extracted from conv2D
+     *      purely to keep the stack shallow enough for the IR codegen -- the
+     *      arithmetic and its ordering are identical to the inlined version.
+     */
+    function _accumulateWindow(
+        int[][][] memory inputData,
+        int[][][][] memory kernel,
+        uint oc,
+        int baseH,
+        int baseW,
+        uint kernelSize
+    )
+        private
+        pure
+        returns (int sumVal)
+    {
+        uint inChannels = inputData.length;
+        int inHeight = int(inputData[0].length);
+        int inWidth = int(inputData[0][0].length);
+
+        // Cache nested references instead of re-indexing four levels deep on
+        // every term; keeps the IR codegen's stack shallow and cuts gas.
+        int[][][] memory outKernel = kernel[oc];
+
+        for (uint ic = 0; ic < inChannels; ic++) {
+            int[][] memory plane = inputData[ic];
+            int[][] memory kernelPlane = outKernel[ic];
+
+            for (uint kh = 0; kh < kernelSize; kh++) {
+                int curH = baseH + int(kh);
+                // Row entirely outside the input: contributes nothing.
+                if (curH < 0 || curH >= inHeight) {
+                    continue;
+                }
+
+                int[] memory inputRow = plane[uint(curH)];
+                int[] memory kernelRow = kernelPlane[kh];
+
+                for (uint kw = 0; kw < kernelSize; kw++) {
+                    int curW = baseW + int(kw);
+                    if (curW >= 0 && curW < inWidth) {
+                        sumVal += inputRow[uint(curW)] * kernelRow[kw];
+                    }
+                }
+            }
+        }
     }
 
     /**

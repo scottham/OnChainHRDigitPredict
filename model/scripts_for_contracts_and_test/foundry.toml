@@ -1,0 +1,17 @@
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["node_modules"]
+test = "test"
+solc_version = "0.8.28"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+remappings = ["@openzeppelin/=node_modules/@openzeppelin/"]
+
+# The inference() view call is compute-heavy (nested external calls over
+# int[][][] arrays). Raise the limits so local eth_call doesn't get clipped.
+gas_limit = "18446744073709551615"
+
+[profile.default.fmt]
+line_length = 110

@@ -7,11 +7,9 @@ try {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   typescript: {
-    ignoreBuildErrors: true,
+    // Was true, which hid real type errors. The tree typechecks clean now.
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,
@@ -20,6 +18,15 @@ const nextConfig = {
     webpackBuildWorker: true,
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
+  },
+  webpack: (config, { webpack }) => {
+    // RainbowKit imports wagmi's whole connectors barrel, which drags in
+    // Coinbase's baseAccount -> @coinbase/cdp-sdk -> the @x402/* payment
+    // packages. Those are optional dependencies that do not resolve, and
+    // module resolution runs before tree-shaking can drop them. Nothing here
+    // uses Coinbase Smart Wallet or x402 payments.
+    config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /^@x402\// }))
+    return config
   },
 }
 

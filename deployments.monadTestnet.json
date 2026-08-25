@@ -1,0 +1,12 @@
+{
+  "chainId": 10143,
+  "network": "Monad Testnet",
+  "deployer": "0x8E5d1Ef824E54648cE19f7f0CC0853DF345c91cF",
+  "deployedAt": "2026-08-24T14:33:33.749Z",
+  "contracts": {
+    "Convolution2D": "0x00a8d614722c5f7325d00e689ec3eb71046c424f",
+    "FullyConnectedLayer": "0xaa8a00158b72f28a324634265dbb060e67b1259d",
+    "MNISTNFT": "0x348a1c5cc416e4d3b1d2d28697c766918f21c368"
+  },
+  "tokenId": "1"
+}
