@@ -12,7 +12,7 @@ Inference is a `view` call, so the demo needs no wallet, no gas and no signature
 | --- | --- |
 | `Convolution2D` | `0x00a8d614722c5f7325d00e689ec3eb71046c424f` |
 | `FullyConnectedLayer` | `0xaa8a00158b72f28a324634265dbb060e67b1259d` |
-| `MNISTNFT` | `0x348a1c5cc416e4d3b1d2d28697c766918f21c368` |
+| `MNISTNFT` | `0x4420fe892e106939aed7165dbca4a5caa65e8647` |
 
 Model NFT: token `1`.
 
@@ -29,6 +29,22 @@ cp .env.example .env
 npm install
 npm run dev
 ```
+
+`npm run dev` always talks to Monad testnet. To run the whole demo locally,
+deploy to anvil (see Workflow below), write a `.env.anvil`:
+
+```
+NEXT_PUBLIC_MONADTESTNET_RPC_URL=http://127.0.0.1:8545
+NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS=<MNISTNFT from deployments.anvil.json>
+```
+
+and start with `npm run dev:anvil`. The file is deliberately not called
+`.env.local`, which Next.js would load ahead of `.env` and silently repoint
+every run at a local node.
+
+anvil serves `debug_traceCall` and `prestateTracer` too, so the execution view
+works unchanged. The app labels the network from the chain id the node reports,
+so it will say `Anvil (local)` rather than pretending to be testnet.
 
 ## Quantization
 
@@ -53,12 +69,26 @@ Because nothing is requantized between layers, activations stay full-width
 the same regardless of magnitude, so quantizing the activations would add work
 rather than save it. int8 is used where it does pay — storage.
 
-Weights are packed 32-to-a-slot, which is what keeps `mint` a single transaction:
+Weights are packed 32-to-a-word, and the packing happens **client-side** —
+`mint` takes `uint256[]` of packed words, not `int[]` of weights. Both halves of
+that matter:
 
-| | one int256 per slot | int8 packed |
-| --- | ---: | ---: |
-| storage slots | ~3,149 | ~117 |
-| mint gas | ~74M | ~6.9M |
+| | int256 per slot | packed on-chain | packed client-side |
+| --- | ---: | ---: | ---: |
+| storage slots | ~3,149 | ~117 | ~117 |
+| mint calldata | ~108 KB | ~108 KB | 4.4 KB |
+| mint gas | ~74M | ~6.9M | 2.79M |
+
+Sending the weights as `int[]` spends a full 32-byte word on every int8. That is
+~1.7M gas of calldata, and — the reason it is not merely wasteful — it exceeds
+MetaMask's JSON-RPC request size limit, so minting from a browser wallet fails
+with `Request too large` before the transaction reaches the chain.
+
+The int8 range check moves off-chain with the packing; `mint` still validates
+that the word count and bias lengths match the declared shapes, so a mis-shaped
+upload cannot be stored. `lib/pack.ts` is shared by `scripts/mint.ts` and the
+browser, and `scripts/verify.ts` is what proves the packed layout matches what
+the contract reads back.
 
 Measured on the full MNIST test set: float 98.09%, int8 98.13%.
 
@@ -103,7 +133,18 @@ and logits shown in the UI are measured, not recomputed in the browser.
 A trace of this call is ~2 MB / ~1s (3,535 external calls), so it runs after the
 prediction rather than blocking it. See `lib/trace.ts`.
 
-Measured gas breakdown of one forward pass:
+The same trace drives a chain-level view (`components/ChainExecution.tsx`): which
+contract holds execution at each moment, what each call cost, and — from
+`prestateTracer` on the same call — the 128 storage words the inference read out
+of `MNISTNFT`, which is where the packed int8 weights live. The call sequence is
+drawn twice, once with gas on the x axis and once with call index, because the
+two are nothing alike: `relu` is 99.8% of the calls and 1.5% of the gas.
+
+Execution is replayed, not streamed. Neither Monad nor any other EVM chain
+exposes intra-call progress — a call either returns or reverts — so the play
+head walks the recorded trace of the call that already ran.
+
+Measured gas breakdown of one forward pass (Monad testnet):
 
 | Callee | Calls | Gas | Share |
 | --- | ---: | ---: | ---: |

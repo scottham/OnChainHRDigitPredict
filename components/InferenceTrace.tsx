@@ -3,21 +3,31 @@
 import { ChevronRight, Loader2, Radio } from "lucide-react"
 
 import FeatureMap from "@/components/FeatureMap"
-import type { InferenceTrace } from "@/lib/trace"
+import type { InferenceTrace, Stage } from "@/lib/trace"
 
-function Stage({
+/**
+ * One stage of the strip. `active` is driven by the execution replay above, so
+ * the layer lights up while the call that produced it is on the play head.
+ */
+function StageColumn({
   label,
   shape,
+  active,
   children,
 }: {
   label: string
   shape: string
+  active?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className="flex shrink-0 flex-col items-center gap-2">
+    <div
+      className={`flex shrink-0 flex-col items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${
+        active ? "bg-violet-500/15 ring-1 ring-violet-400/50" : ""
+      }`}
+    >
       <div className="text-center">
-        <div className="text-xs font-medium">{label}</div>
+        <div className={`text-xs font-medium ${active ? "text-violet-200" : ""}`}>{label}</div>
         <div className="font-mono text-[10px] text-muted-foreground">{shape}</div>
       </div>
       {children}
@@ -82,11 +92,13 @@ export default function InferenceTraceView({
   trace,
   loading,
   error,
+  activeStage,
 }: {
   input: number[][] | null
   trace: InferenceTrace | null
   loading: boolean
   error: string | null
+  activeStage?: Stage["key"] | null
 }) {
   return (
     <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
@@ -99,7 +111,8 @@ export default function InferenceTraceView({
       </div>
       <p className="mb-5 text-xs text-muted-foreground">
         Every activation below is the actual return value of an on-chain call, read back with{" "}
-        <code className="font-mono">debug_traceCall</code>. Nothing here is recomputed in the browser.
+        <code className="font-mono">debug_traceCall</code> — the same single call that produced the
+        prediction. Nothing here is recomputed in the browser.
       </p>
 
       {loading && (
@@ -118,41 +131,43 @@ export default function InferenceTraceView({
       {trace && !loading && (
         <>
           <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-3">
-            <Stage label="Input" shape="1×28×28">
+            <StageColumn label="Input" shape="1×28×28">
               {input && <FeatureMap data={input} size={72} />}
-            </Stage>
+            </StageColumn>
 
             <Arrow op="conv 3×3" />
-            <Stage label="conv1 + ReLU" shape="3×28×28">
+            <StageColumn label="conv1 + ReLU" shape="3×28×28" active={activeStage === "conv1"}>
               <Channels maps={trace.conv1} size={44} />
-            </Stage>
+            </StageColumn>
 
             <Arrow op="maxpool 2" />
-            <Stage label="pool1" shape="3×14×14">
+            <StageColumn label="pool1" shape="3×14×14" active={activeStage === "pool1"}>
               <Channels maps={trace.pool1} size={44} />
-            </Stage>
+            </StageColumn>
 
             <Arrow op="conv 3×3" />
-            <Stage label="conv2 + ReLU" shape="6×14×14">
+            <StageColumn label="conv2 + ReLU" shape="6×14×14" active={activeStage === "conv2"}>
               <Channels maps={trace.conv2} size={26} />
-            </Stage>
+            </StageColumn>
 
             <Arrow op="maxpool 2" />
-            <Stage label="pool2" shape="6×7×7">
+            <StageColumn label="pool2" shape="6×7×7" active={activeStage === "pool2"}>
               <Channels maps={trace.pool2} size={26} />
-            </Stage>
+            </StageColumn>
 
             <Arrow op="flatten → fc" />
-            <Stage label="logits" shape="10">
+            <StageColumn label="logits" shape="10" active={activeStage === "fc" || activeStage === "flatten" || activeStage === "argmax"}>
               <Logits logits={trace.logits} prediction={trace.prediction} />
-            </Stage>
+            </StageColumn>
           </div>
 
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-border/60 pt-3 font-mono text-[11px] text-muted-foreground">
             <span>{trace.totalCalls.toLocaleString()} external calls</span>
             <span>{trace.callCounts.relu?.toLocaleString()} × relu()</span>
             <span>{(trace.traceBytes / 1024 / 1024).toFixed(2)} MB trace</span>
-            <span>{trace.elapsedMs} ms</span>
+            <span title="The prediction and this trace come from the same traced call: this is how long that call took, including transferring and parsing the trace JSON.">
+              {trace.elapsedMs} ms
+            </span>
           </div>
         </>
       )}

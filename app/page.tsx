@@ -10,7 +10,9 @@ import { Eraser, Sparkles, Loader2, AlertTriangle, ExternalLink, Upload, Cpu } f
 import CanvasBoard, { type CanvasBoardHandle } from "@/components/CanvasBoard"
 import DigitPreview from "@/components/DigitPreview"
 import InferenceTraceView from "@/components/InferenceTrace"
-import { traceInference, type InferenceTrace } from "@/lib/trace"
+import ChainExecution from "@/components/ChainExecution"
+import { traceInference, type InferenceTrace, type Stage } from "@/lib/trace"
+import { toMintArgs } from "@/lib/pack"
 import { Button } from "@/components/ui/button"
 import {
   CHAIN,
@@ -35,6 +37,7 @@ export default function Page() {
   const { switchChain } = useSwitchChain()
 
   const [contractState, setContractState] = useState<ContractState>("checking")
+  const [nodeChainId, setNodeChainId] = useState<number | null>(null)
   const [preview, setPreview] = useState<number[][] | null>(null)
   const [prediction, setPrediction] = useState<number | null>(null)
   const [latency, setLatency] = useState<number | null>(null)
@@ -46,12 +49,27 @@ export default function Page() {
   const [tracing, setTracing] = useState(false)
   const [traceError, setTraceError] = useState<string | null>(null)
   const [tracedInput, setTracedInput] = useState<number[][] | null>(null)
+  /** Which layer the execution replay is currently inside. */
+  const [activeStage, setActiveStage] = useState<Stage["key"] | null>(null)
 
   const [modelFile, setModelFile] = useState<string | null>(null)
   const [modelParams, setModelParams] = useState<any>(null)
   const [minting, setMinting] = useState(false)
 
   const onWrongChain = isConnected && chainId !== CHAIN.id
+
+  /**
+   * The RPC URL is overridable, so the configured chain is not proof of where
+   * the calls actually land -- pointing NEXT_PUBLIC_MONADTESTNET_RPC_URL at a
+   * local anvil would otherwise still read "Monad Testnet". Label from the id
+   * the node itself reports.
+   */
+  const networkLabel =
+    nodeChainId === null || nodeChainId === CHAIN.id
+      ? CHAIN.name
+      : nodeChainId === 31337
+        ? "Anvil (local)"
+        : `chainId ${nodeChainId}`
 
   /**
    * Confirm the contract still exists before anyone draws.
@@ -74,6 +92,10 @@ export default function Page() {
         setContractState(code && code !== "0x" ? "ready" : "missing")
       })
       .catch(() => !cancelled && setContractState("missing"))
+    publicClient
+      .getChainId()
+      .then((id) => !cancelled && setNodeChainId(id))
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -99,43 +121,57 @@ export default function Page() {
 
     setPredicting(true)
     setPrediction(null)
+    setTracing(true)
+    setTraceError(null)
+    setTracedInput(grid)
     try {
+      /**
+       * One traced call, not two.
+       *
+       * debug_traceCall returns the root call's own output, which is the
+       * prediction, alongside every child call. Asking for the answer with
+       * readContract and then tracing it would make the node run the same ~50M
+       * gas of work twice for a single click.
+       */
       const started = performance.now()
-      const result = (await publicClient.readContract({
-        address: CONTRACT_ADDRESS,
-        abi: MNIST_NFT_ABI,
-        functionName: "inference",
-        args: [BigInt(tokenId), grid.map((row) => row.map((v) => BigInt(v)))],
-      })) as bigint
+      const result = await traceInference(publicClient, BigInt(tokenId), grid)
       setLatency(Math.round(performance.now() - started))
-      setPrediction(Number(result))
-
-      // The trace is ~2 MB and takes about a second, so it runs after the
-      // answer is already on screen rather than delaying it.
-      setTracing(true)
-      setTraceError(null)
-      setTracedInput(grid)
-      traceInference(publicClient, BigInt(tokenId), grid)
-        .then(setTrace)
-        .catch((err: any) => {
-          setTrace(null)
-          setTraceError(
-            `Could not trace this call: ${(err?.message ?? "unknown error").split("\n")[0]}. ` +
-            `The prediction above is unaffected.`
-          )
-        })
-        .finally(() => setTracing(false))
+      setPrediction(result.prediction)
+      setTrace(result)
     } catch (err: any) {
       const detail: string = err?.shortMessage || err?.message || "unknown error"
       if (/Token does not exist/.test(detail)) {
         toast.error(`Token ${tokenId} has no model`, {
           description: "No weights are stored under this id. Try token 1, or mint a model below.",
         })
-      } else {
-        toast.error("Inference failed", { description: detail.split("\n")[0] })
+        setPredicting(false)
+        setTracing(false)
+        return
+      }
+
+      // An RPC without the debug namespace can still answer the question; it
+      // just cannot show the work. Fall back to a plain call rather than
+      // failing the prediction.
+      setTrace(null)
+      setTraceError(`Could not trace this call: ${detail.split("\n")[0]}`)
+      try {
+        const started = performance.now()
+        const result = (await publicClient.readContract({
+          address: CONTRACT_ADDRESS,
+          abi: MNIST_NFT_ABI,
+          functionName: "inference",
+          args: [BigInt(tokenId), grid.map((row) => row.map((v) => BigInt(v)))],
+        })) as bigint
+        setLatency(Math.round(performance.now() - started))
+        setPrediction(Number(result))
+      } catch (fallbackErr: any) {
+        toast.error("Inference failed", {
+          description: (fallbackErr?.shortMessage || fallbackErr?.message || detail).split("\n")[0],
+        })
       }
     } finally {
       setPredicting(false)
+      setTracing(false)
     }
   }, [publicClient, tokenId])
 
@@ -147,19 +183,16 @@ export default function Page() {
     }
     setMinting(true)
     try {
-      const toBig = (v: any): any => (Array.isArray(v) ? v.map(toBig) : BigInt(v))
+      /**
+       * Weights go up packed, 32 int8 per word. Sent as int[] the same model is
+       * ~108 KB of calldata, which MetaMask rejects outright with "Request too
+       * large" before the transaction ever reaches the chain.
+       */
       const hash = await walletClient.writeContract({
         address: CONTRACT_ADDRESS,
         abi: MNIST_NFT_ABI,
         functionName: "mint",
-        args: [
-          toBig(modelParams.conv1),
-          toBig(modelParams.conv1_bias),
-          toBig(modelParams.conv2),
-          toBig(modelParams.conv2_bias),
-          toBig(modelParams.fc),
-          toBig(modelParams.fc_bias),
-        ],
+        args: toMintArgs(modelParams),
         chain: CHAIN,
         account: address,
       })
@@ -281,7 +314,7 @@ export default function Page() {
                 </div>
                 <div className="min-w-0 space-y-2 text-xs">
                   <Row label="Latency" value={latency !== null ? `${latency} ms` : "—"} />
-                  <Row label="Network" value={CHAIN.name} />
+                  <Row label="Network" value={networkLabel} />
                   <Row label="Token" value={`#${tokenId}`} />
                 </div>
               </div>
@@ -370,12 +403,21 @@ export default function Page() {
           </aside>
         </main>
 
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
+          <ChainExecution
+            trace={trace}
+            networkLabel={networkLabel}
+            latencyMs={latency}
+            tokenId={BigInt(tokenId)}
+            input={tracedInput}
+            onStage={setActiveStage}
+          />
           <InferenceTraceView
             input={tracedInput}
             trace={trace}
             loading={tracing}
             error={traceError}
+            activeStage={activeStage}
           />
         </div>
 
