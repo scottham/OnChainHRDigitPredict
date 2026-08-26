@@ -124,25 +124,42 @@ testnet. If they ever disagree, the chain is authoritative.
 
 ## Execution trace
 
-After a prediction, the app reads the real per-layer activations back off the
-chain with `debug_traceCall` and renders them. Because `inference` delegates
-every layer to `Convolution2D` / `FullyConnectedLayer` via external calls, the
-callTracer output contains each layer's actual return data — the feature maps
-and logits shown in the UI are measured, not recomputed in the browser.
+Predicting is **one** `debug_traceCall` (`lib/trace.ts`). The root call's own
+return value is the prediction, and because `inference` delegates every layer to
+`Convolution2D` / `FullyConnectedLayer` via external calls, the same callTracer
+output already contains each layer's actual return data. Asking for the answer
+with a separate `eth_call` and then tracing it would make the node run the same
+~50M gas of work twice for one click.
 
-A trace of this call is ~2 MB / ~1s (3,535 external calls), so it runs after the
-prediction rather than blocking it. See `lib/trace.ts`.
+The trace is ~2 MB / 3,535 calls, so the prediction costs ~1s on testnet rather
+than the ~330ms a bare `eth_call` takes. That is the price of showing the work,
+paid once. If the RPC has no `debug` namespace, the app falls back to a plain
+call: the prediction still works, only the visualization is missing.
 
-The same trace drives a chain-level view (`components/ChainExecution.tsx`): which
-contract holds execution at each moment, what each call cost, and — from
-`prestateTracer` on the same call — the 128 storage words the inference read out
-of `MNISTNFT`, which is where the packed int8 weights live. The call sequence is
-drawn twice, once with gas on the x axis and once with call index, because the
-two are nothing alike: `relu` is 99.8% of the calls and 1.5% of the gas.
+Two views are built from that one trace:
+
+- `components/InferenceTrace.tsx` — the activations, layer by layer. Measured,
+  not recomputed in the browser.
+- `components/ChainExecution.tsx` — the chain-level view: which contract holds
+  execution at each moment and what each call cost. The call sequence is drawn
+  twice, once with gas on the x axis and once with call index, because the two
+  are nothing alike — `relu` is 99.8% of the calls and 1.5% of the gas.
+
+Two things there are opt-in, because each costs another execution:
+
+- **storage** — `prestateTracer` reports the 128 words the inference reads out of
+  `MNISTNFT`, where the packed int8 weights live. Cached after the first read:
+  the weights do not depend on the image.
+- **per-layer wall-clock** — each layer re-issued as its own `eth_call` with the
+  calldata the trace recorded. The math contracts are pure, so the replay returns
+  byte-identical output. Each figure includes one RPC round trip and excludes the
+  per-element `relu` calls, so they do not decompose the combined call's latency.
 
 Execution is replayed, not streamed. Neither Monad nor any other EVM chain
 exposes intra-call progress — a call either returns or reverts — so the play
-head walks the recorded trace of the call that already ran.
+head walks the recorded trace of the call that already ran, over exactly the
+wall-clock the call itself took. Within that window it advances by **gas**: a
+trace records what each call cost, never when it ran.
 
 Measured gas breakdown of one forward pass (Monad testnet):
 
@@ -167,6 +184,15 @@ The 3,528 `relu` cross-contract calls, which look like the obvious problem, are
   transaction is rejected with `Exceeds transaction gas limit`.
 - `eth_call` allowances are far larger (200M on the public RPC), which is what
   makes a ~60M-gas `inference` view call viable.
+- `debug_traceCall` reports the **supplied** gas as the root call's `gasUsed`,
+  not the gas consumed — supply 100M and it answers 100M. anvil reports the real
+  figure. The UI treats anything at or above the limit as unknown and sums the
+  external calls instead.
+- `debug_traceCall` and `prestateTracer` both work on the public RPC; `trace_*`
+  is not exposed.
+- MetaMask caps JSON-RPC request size. It is not a chain limit, but it decides
+  what a browser wallet can send: 108 KB of mint calldata is rejected with
+  `Request too large` before it reaches the node.
 - wagmi's default Multicall3 batching must stay **off** (`batch: { multicall:
   false }`). Routed through Multicall3, the 63/64 gas-forwarding rule starves
   `inference`, and `aggregate3` swallows the failure into a bare revert.

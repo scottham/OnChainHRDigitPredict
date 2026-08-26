@@ -292,6 +292,8 @@ for.
 - [Monad: Testnet changelog (2025-12-16 re-genesis)](https://docs.monad.xyz/developer-essentials/changelog/testnet)
 
 Measured figures for this repo come from `debug_traceCall` against
-MNISTNFT `0x348a1c5cc416e4d3b1d2d28697c766918f21c368` on Monad testnet,
-token 1. Reproduce with `npx tsx scripts/verify.ts --target monadTestnet`
+MNISTNFT on Monad testnet, token 1 — `0x348a1c5cc416e4d3b1d2d28697c766918f21c368`
+at the time of measurement, since redeployed at
+`0x4420fe892e106939aed7165dbca4a5caa65e8647` with a packed-calldata `mint`.
+The inference path is unchanged, so the gas figures still hold. Reproduce with `npx tsx scripts/verify.ts --target monadTestnet`
 and the trace path in `lib/trace.ts`.
