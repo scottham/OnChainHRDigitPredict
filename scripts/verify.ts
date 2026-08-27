@@ -27,7 +27,7 @@ const { chain, publicClient } = makeClients(target)
 async function main() {
   const deployment = JSON.parse(readFileSync(deploymentPath, "utf-8"))
   const address = deployment.contracts.MNISTNFT as `0x${string}`
-  const tokenId = BigInt(deployment.tokenId)
+  const tokenId = BigInt(arg("token") ?? deployment.tokenId)
   const { abi } = loadArtifact("MNISTNFT")
 
   const fixture = JSON.parse(readFileSync(fixturePath, "utf-8")) as {

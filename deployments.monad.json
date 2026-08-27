@@ -1,0 +1,12 @@
+{
+  "chainId": 143,
+  "network": "Monad",
+  "deployer": "0x8E5d1Ef824E54648cE19f7f0CC0853DF345c91cF",
+  "deployedAt": "2026-08-27T14:36:17.122Z",
+  "contracts": {
+    "Convolution2D": "0x00a8d614722c5f7325d00e689ec3eb71046c424f",
+    "FullyConnectedLayer": "0xaa8a00158b72f28a324634265dbb060e67b1259d",
+    "MNISTNFT": "0xd99bdd2d972aaf4d1dd2fb360e14b00d592c3a0a"
+  },
+  "tokenId": "1"
+}

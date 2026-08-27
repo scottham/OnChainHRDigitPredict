@@ -6,6 +6,15 @@ import { privateKeyToAccount } from "viem/accounts"
 const ROOT = resolve(import.meta.dirname, "..")
 const FORGE_OUT = resolve(ROOT, "model/scripts_for_contracts_and_test/out")
 
+/** Monad mainnet. */
+export const monadMainnet = defineChain({
+  id: 143,
+  name: "Monad",
+  nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.monad.xyz"] } },
+  blockExplorers: { default: { name: "Monadscan", url: "https://monadscan.com" } },
+})
+
 /** Monad testnet, re-genesised 2025-12-16. */
 export const monadTestnet = defineChain({
   id: 10143,
@@ -98,11 +107,13 @@ export function loadParams(path: string): ModelParams {
   }
 }
 
-export type Target = "anvil" | "monadTestnet"
+export type Target = "anvil" | "monadTestnet" | "monad"
 
 /**
- * Build clients for a target. The testnet key comes from PRIVATE_KEY in .env
- * and is never logged -- only the derived address is printed.
+ * Build clients for a target. The key comes from PRIVATE_KEY in .env and is
+ * never logged -- only the derived address is printed.
+ *
+ * `monad` is mainnet and spends real MON.
  */
 export function makeClients(target: Target) {
   if (target === "anvil") {
@@ -120,8 +131,12 @@ export function makeClients(target: Target) {
   const normalized = (key.startsWith("0x") ? key : `0x${key}`) as Hex
   const account = privateKeyToAccount(normalized)
 
-  const rpc = process.env.NEXT_PUBLIC_MONADTESTNET_RPC_URL || monadTestnet.rpcUrls.default.http[0]
-  const chain = { ...monadTestnet, rpcUrls: { default: { http: [rpc] } } }
+  const base = target === "monad" ? monadMainnet : monadTestnet
+  // Deliberately not NEXT_PUBLIC_RPC_URL: that one follows whatever the app is
+  // pointed at, which may be a different chain than the target asked for.
+  const envRpc = target === "monad" ? process.env.MONAD_RPC_URL : process.env.MONAD_TESTNET_RPC_URL
+  const rpc = envRpc || base.rpcUrls.default.http[0]
+  const chain = { ...base, rpcUrls: { default: { http: [rpc] } } }
 
   return {
     chain,

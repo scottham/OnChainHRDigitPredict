@@ -2,11 +2,23 @@
 
 A small convolutional network whose weights live inside an NFT and whose entire
 forward pass — every multiply-accumulate, ReLU, max-pool and argmax — executes
-in EVM contracts on Monad testnet. Nothing is computed off-chain.
+in EVM contracts on Monad. Nothing is computed off-chain.
 
-Inference is a `view` call, so the demo needs no wallet, no gas and no signature.
+## Deployments
 
-## Contracts (Monad testnet, chainId 10143)
+The model *is* the token: each id holds a different set of weights, and the app
+runs whichever one you select. The network picker in the header switches which
+chain — and therefore which contract — it reads.
+
+**Monad mainnet** (chainId 143)
+
+| Contract | Address |
+| --- | --- |
+| `Convolution2D` | `0x00a8d614722c5f7325d00e689ec3eb71046c424f` |
+| `FullyConnectedLayer` | `0xaa8a00158b72f28a324634265dbb060e67b1259d` |
+| `MNISTNFT` | `0xd99bdd2d972aaf4d1dd2fb360e14b00d592c3a0a` |
+
+**Monad testnet** (chainId 10143)
 
 | Contract | Address |
 | --- | --- |
@@ -14,7 +26,8 @@ Inference is a `view` call, so the demo needs no wallet, no gas and no signature
 | `FullyConnectedLayer` | `0xaa8a00158b72f28a324634265dbb060e67b1259d` |
 | `MNISTNFT` | `0x4420fe892e106939aed7165dbca4a5caa65e8647` |
 
-Model NFT: token `1`.
+Inference is a `view` call on either chain, so the demo needs no wallet, no gas
+and no signature. Minting a model does need one.
 
 > Monad's testnet was re-genesised on 2025-12-16, which wiped every contract
 > deployed before that date. If the app reports "no contract code", the testnet
@@ -30,21 +43,27 @@ npm install
 npm run dev
 ```
 
-`npm run dev` always talks to Monad testnet. To run the whole demo locally,
-deploy to anvil (see Workflow below), write a `.env.anvil`:
+Networks are configured one address per chain, and only chains with an address
+are offered in the picker:
 
 ```
-NEXT_PUBLIC_MONADTESTNET_RPC_URL=http://127.0.0.1:8545
-NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS=<MNISTNFT from deployments.anvil.json>
+NEXT_PUBLIC_CONTRACT_ADDRESS_143=0xd99b…      # mainnet
+NEXT_PUBLIC_CONTRACT_ADDRESS_10143=0x4420…    # testnet
+NEXT_PUBLIC_DEFAULT_CHAIN_ID=143
 ```
 
-and start with `npm run dev:anvil`. The file is deliberately not called
-`.env.local`, which Next.js would load ahead of `.env` and silently repoint
-every run at a local node.
+To add a local chain, deploy to anvil (see Workflow below) and put its address
+in `.env.anvil` as `NEXT_PUBLIC_CONTRACT_ADDRESS_31337`, then `npm run
+dev:anvil`. That file is deliberately not called `.env.local`, which Next.js
+would load ahead of `.env` and silently add a local node to every run.
 
 anvil serves `debug_traceCall` and `prestateTracer` too, so the execution view
-works unchanged. The app labels the network from the chain id the node reports,
-so it will say `Anvil (local)` rather than pretending to be testnet.
+works unchanged.
+
+The network shown in the UI always comes from the chain id the **node** reports,
+never from config — and a write is only allowed when the wallet is on that same
+chain. See `lib/chain-gate.ts` and `npm test`; a constant standing in for the
+live chain there once sent a real testnet transaction to a local address.
 
 ## Quantization
 
@@ -79,6 +98,10 @@ that matter:
 | mint calldata | ~108 KB | ~108 KB | 4.4 KB |
 | mint gas | ~74M | ~6.9M | 2.79M |
 
+Mint gas depends on whether the storage slots are fresh: 2.79M when overwriting
+an existing model's slots, 4.28M on a first mint into empty ones (20,000 vs
+2,900 gas per word).
+
 Sending the weights as `int[]` spends a full 32-byte word on every int8. That is
 ~1.7M gas of calldata, and — the reason it is not merely wasteful — it exceeds
 MetaMask's JSON-RPC request size limit, so minting from a browser wallet fails
@@ -111,10 +134,19 @@ npx tsx scripts/deploy.ts --target anvil
 npx tsx scripts/mint.ts   --target anvil --params model/checkpoints/<best>.json
 npx tsx scripts/verify.ts --target anvil
 
-# testnet (Convolution2D and FullyConnectedLayer are stateless and reusable)
+# testnet / mainnet -- Convolution2D and FullyConnectedLayer are stateless, so
+# an existing pair can be reused with --conv / --fc
 npx tsx scripts/deploy.ts --target monadTestnet --conv 0x00a8… --fc 0xaa8a…
 npx tsx scripts/mint.ts   --target monadTestnet --params model/checkpoints/<best>.json
-npx tsx scripts/verify.ts --target monadTestnet
+npx tsx scripts/verify.ts --target monadTestnet --token 1
+
+# --target monad is mainnet and spends real MON
+npx tsx scripts/deploy.ts --target monad
+npx tsx scripts/mint.ts   --target monad --params model/checkpoints/<best>.json
+npx tsx scripts/verify.ts --target monad
+
+# list every model minted on the configured contract
+npx tsx scripts/registry.ts
 ```
 
 `model/solidity_sim.py` is a numpy replica of the contract arithmetic, used as a
@@ -161,7 +193,8 @@ head walks the recorded trace of the call that already ran, over exactly the
 wall-clock the call itself took. Within that window it advances by **gas**: a
 trace records what each call cost, never when it ran.
 
-Measured gas breakdown of one forward pass (Monad testnet):
+Measured gas breakdown of one forward pass (Monad testnet; mainnet is the same
+code and the same gas, at roughly 245ms per call instead of 330ms):
 
 | Callee | Calls | Gas | Share |
 | --- | ---: | ---: | ---: |

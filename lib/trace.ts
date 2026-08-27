@@ -1,6 +1,6 @@
 import { decodeAbiParameters, encodeFunctionData, parseAbiParameters, type PublicClient } from "viem"
 
-import { CONTRACT_ADDRESS, MNIST_NFT_ABI } from "./contractConfig"
+import { MNIST_NFT_ABI } from "./abi"
 
 /**
  * Run one inference and take it apart: the prediction, the per-layer
@@ -173,6 +173,8 @@ function toStages(calls: CallRecord[]): Stage[] {
 
 export async function traceInference(
   client: PublicClient,
+  /** Which deployment to call -- the app can be pointed at several networks. */
+  contract: `0x${string}`,
   tokenId: bigint,
   grid: number[][]
 ): Promise<InferenceTrace> {
@@ -181,7 +183,7 @@ export async function traceInference(
     functionName: "inference",
     args: [tokenId, grid.map((row) => row.map((v) => BigInt(v)))],
   })
-  const request = { to: CONTRACT_ADDRESS, data, gas: `0x${SUPPLIED_GAS.toString(16)}` }
+  const request = { to: contract, data, gas: `0x${SUPPLIED_GAS.toString(16)}` }
 
   const started = performance.now()
   const [result, blockNumber] = await Promise.all([
@@ -246,7 +248,7 @@ export async function traceInference(
 
   const contracts: ContractUsage[] = [
     {
-      address: CONTRACT_ADDRESS,
+      address: contract,
       label: "MNISTNFT",
       role: "holds the weights, drives the forward pass",
       calls: 1,
@@ -337,10 +339,11 @@ let layoutCache: { key: string; layout: StorageLayout } | null = null
 
 export async function loadStorageLayout(
   client: PublicClient,
+  contract: `0x${string}`,
   tokenId: bigint,
   grid: number[][]
 ): Promise<StorageLayout> {
-  const key = `${CONTRACT_ADDRESS}:${tokenId}`
+  const key = `${contract}:${tokenId}`
   if (layoutCache?.key === key) return layoutCache.layout
 
   const data = encodeFunctionData({
@@ -351,7 +354,7 @@ export async function loadStorageLayout(
   const prestate = (await client.request({
     method: "debug_traceCall" as any,
     params: [
-      { to: CONTRACT_ADDRESS, data, gas: `0x${SUPPLIED_GAS.toString(16)}` },
+      { to: contract, data, gas: `0x${SUPPLIED_GAS.toString(16)}` },
       "latest",
       { tracer: "prestateTracer" },
     ] as any,
@@ -362,8 +365,8 @@ export async function loadStorageLayout(
     codeBytes[address.toLowerCase()] = entry.code ? (entry.code.length - 2) / 2 : 0
   }
   const slots = Object.keys(
-    prestate[CONTRACT_ADDRESS]?.storage ??
-      prestate[CONTRACT_ADDRESS.toLowerCase()]?.storage ??
+    prestate[contract]?.storage ??
+      prestate[contract.toLowerCase()]?.storage ??
       {}
   ) as `0x${string}`[]
 

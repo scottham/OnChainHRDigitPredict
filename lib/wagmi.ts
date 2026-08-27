@@ -9,8 +9,9 @@ import {
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets"
 import { createConfig, http } from "wagmi"
+import type { Chain } from "viem"
 
-import { CHAIN, RPC_URL } from "./contractConfig"
+import { NETWORKS } from "./networks"
 
 /**
  * WalletConnect needs a project id from https://cloud.reown.com. Without one
@@ -32,9 +33,11 @@ const connectors = connectorsForWallets([{ groupName: "Wallets", wallets }], {
 })
 
 export const wagmiConfig = createConfig({
-  chains: [CHAIN],
+  // Every configured network, so the user can switch at runtime and RainbowKit
+  // can offer the wallet the matching chain.
+  chains: NETWORKS.map((n) => n.chain) as unknown as readonly [Chain, ...Chain[]],
   connectors,
-  transports: { [CHAIN.id]: http(RPC_URL) },
+  transports: Object.fromEntries(NETWORKS.map((n) => [n.chain.id, http(n.rpcUrl)])),
   ssr: true,
   /**
    * Multicall batching must stay off.
