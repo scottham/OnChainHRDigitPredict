@@ -94,50 +94,13 @@ contract MNISTNFT is ERC721 {
     // int8 packing
     // -------------------------------
 
-    function _pack(int[] memory flat) private pure returns (uint256[] memory words) {
-        words = new uint256[]((flat.length + WEIGHTS_PER_SLOT - 1) / WEIGHTS_PER_SLOT);
-        for (uint256 i = 0; i < flat.length; i++) {
-            int256 v = flat[i];
-            require(v >= -128 && v <= 127, "Weight outside int8 range.");
-            words[i / WEIGHTS_PER_SLOT] |= uint256(uint8(int8(v))) << ((i % WEIGHTS_PER_SLOT) * 8);
-        }
-    }
-
     function _at(uint256[] storage words, uint256 i) private view returns (int256) {
         return int256(int8(uint8(words[i / WEIGHTS_PER_SLOT] >> ((i % WEIGHTS_PER_SLOT) * 8))));
     }
 
-    function _flatten4D(int[][][][] memory k) private pure returns (int[] memory flat) {
-        uint256 n0 = k.length;
-        uint256 n1 = k[0].length;
-        uint256 n2 = k[0][0].length;
-        uint256 n3 = k[0][0][0].length;
-        flat = new int[](n0 * n1 * n2 * n3);
-        uint256 idx;
-        for (uint256 a = 0; a < n0; a++) {
-            for (uint256 b = 0; b < n1; b++) {
-                for (uint256 c = 0; c < n2; c++) {
-                    for (uint256 d = 0; d < n3; d++) {
-                        flat[idx++] = k[a][b][c][d];
-                    }
-                }
-            }
-        }
-    }
-
-    function _flatten2D(int[][] memory m) private pure returns (int[] memory flat) {
-        uint256 n0 = m.length;
-        uint256 n1 = m[0].length;
-        flat = new int[](n0 * n1);
-        uint256 idx;
-        for (uint256 a = 0; a < n0; a++) {
-            for (uint256 b = 0; b < n1; b++) {
-                flat[idx++] = m[a][b];
-            }
-        }
-    }
-
-    /// Rebuild [n0][n1][k][k] from packed storage, in the order _flatten4D wrote.
+    /// Rebuild [n0][n1][k][k] from packed storage. Weights are packed in
+    /// row-major order over [outChannel][inChannel][kernelRow][kernelCol],
+    /// 32 int8 per word, least-significant byte first.
     function _rebuild4D(uint256[] storage words, uint256 n0, uint256 n1, uint256 k)
         private
         view
@@ -178,49 +141,89 @@ contract MNISTNFT is ERC721 {
     // mint: upload the weights, nothing else
     // -------------------------------
 
-    function _storeConv1(ModelParams storage mp, int[][][][] memory weight, int[] memory bias) private {
-        mp.conv1Out = uint16(weight.length);
-        mp.conv1In = uint16(weight[0].length);
-        mp.conv1K = uint16(weight[0][0].length);
-        mp.conv1Packed = _pack(_flatten4D(weight));
+    /**
+     * The client sends the weights already packed -- one 256-bit word per 32
+     * int8 weights, row-major, least-significant byte first.
+     *
+     * Sent as int[] instead, a ~3,150-weight model is ~108 KB of calldata: the
+     * ABI spends a full 32-byte word on every int8. That is ~1.7M gas of
+     * calldata alone, and it is over MetaMask's JSON-RPC request size limit, so
+     * minting from a browser wallet fails outright with "Request too large".
+     * Packed, the same model is ~4 KB.
+     *
+     * The trade is that the int8 range check moves off-chain; a caller can only
+     * corrupt the model in the token it is minting for itself. Lengths are
+     * still checked here, so a mis-shaped upload cannot be stored.
+     */
+    function _requireWordCount(uint256 words, uint256 weights) private pure {
+        require(words == (weights + WEIGHTS_PER_SLOT - 1) / WEIGHTS_PER_SLOT, "Packed length mismatch.");
+    }
+
+    function _storeConv1(
+        ModelParams storage mp,
+        uint16[3] calldata shape,
+        uint256[] calldata packed,
+        int[] calldata bias
+    ) private {
+        _requireWordCount(packed.length, uint256(shape[0]) * shape[1] * shape[2] * shape[2]);
+        require(bias.length == shape[0], "Bias length mismatch.");
+        mp.conv1Out = shape[0];
+        mp.conv1In = shape[1];
+        mp.conv1K = shape[2];
+        mp.conv1Packed = packed;
         mp.conv1Bias = bias;
     }
 
-    function _storeConv2(ModelParams storage mp, int[][][][] memory weight, int[] memory bias) private {
-        mp.conv2Out = uint16(weight.length);
-        mp.conv2In = uint16(weight[0].length);
-        mp.conv2K = uint16(weight[0][0].length);
-        mp.conv2Packed = _pack(_flatten4D(weight));
+    function _storeConv2(
+        ModelParams storage mp,
+        uint16[3] calldata shape,
+        uint256[] calldata packed,
+        int[] calldata bias
+    ) private {
+        _requireWordCount(packed.length, uint256(shape[0]) * shape[1] * shape[2] * shape[2]);
+        require(bias.length == shape[0], "Bias length mismatch.");
+        mp.conv2Out = shape[0];
+        mp.conv2In = shape[1];
+        mp.conv2K = shape[2];
+        mp.conv2Packed = packed;
         mp.conv2Bias = bias;
     }
 
-    function _storeFc(ModelParams storage mp, int[][] memory weight, int[] memory bias) private {
-        mp.fcOut = uint16(weight.length);
-        mp.fcIn = uint16(weight[0].length);
-        mp.fcPacked = _pack(_flatten2D(weight));
+    function _storeFc(
+        ModelParams storage mp,
+        uint16[2] calldata shape,
+        uint256[] calldata packed,
+        int[] calldata bias
+    ) private {
+        _requireWordCount(packed.length, uint256(shape[0]) * shape[1]);
+        require(bias.length == shape[0], "Bias length mismatch.");
+        mp.fcOut = shape[0];
+        mp.fcIn = shape[1];
+        mp.fcPacked = packed;
         mp.fcBias = bias;
     }
 
+    /// @param conv1Shape [outChannels, inChannels, kernelSize]
+    /// @param fcShape    [outFeatures, inFeatures]
     function mint(
-        // conv1
-        int[][][][] memory conv1Weight,
-        int[] memory conv1Bias,
-        // conv2
-        int[][][][] memory conv2Weight,
-        int[] memory conv2Bias,
-        // fc
-        int[][] memory fcWeight,
-        int[] memory fcBias
-    ) public returns (uint256) {
-
+        uint16[3] calldata conv1Shape,
+        uint256[] calldata conv1Packed,
+        int[] calldata conv1Bias,
+        uint16[3] calldata conv2Shape,
+        uint256[] calldata conv2Packed,
+        int[] calldata conv2Bias,
+        uint16[2] calldata fcShape,
+        uint256[] calldata fcPacked,
+        int[] calldata fcBias
+    ) external returns (uint256) {
         uint256 newTokenId = _tokenIds + 1;
         _safeMint(msg.sender, newTokenId);
         _tokenIds = newTokenId;
 
         ModelParams storage mp = _tokenModelParams[newTokenId];
-        _storeConv1(mp, conv1Weight, conv1Bias);
-        _storeConv2(mp, conv2Weight, conv2Bias);
-        _storeFc(mp, fcWeight, fcBias);
+        _storeConv1(mp, conv1Shape, conv1Packed, conv1Bias);
+        _storeConv2(mp, conv2Shape, conv2Packed, conv2Bias);
+        _storeFc(mp, fcShape, fcPacked, fcBias);
 
         return newTokenId;
     }

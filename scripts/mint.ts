@@ -10,7 +10,8 @@
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs"
 import { formatEther } from "viem"
-import { loadArtifact, loadParams, makeClients, computeFees, arg, type Target } from "./common.js"
+import { loadArtifact, makeClients, computeFees, arg, type Target } from "./common.js"
+import { toMintArgs } from "../lib/pack.js"
 
 if (existsSync(".env")) process.loadEnvFile(".env")
 
@@ -27,7 +28,9 @@ async function main() {
   const deployment = JSON.parse(readFileSync(deploymentPath, "utf-8"))
   const address = deployment.contracts.MNISTNFT
   const { abi } = loadArtifact("MNISTNFT")
-  const params = loadParams(paramsPath!)
+  // The same packer the browser uses -- verify.ts is what proves the packed
+  // layout matches what the contract reads back.
+  const args = toMintArgs(JSON.parse(readFileSync(paramsPath!, "utf-8")))
 
   console.log(`target:   ${chain.name} (chainId ${chain.id})`)
   console.log(`contract: ${address}`)
@@ -37,11 +40,6 @@ async function main() {
   console.log(`balance:  ${formatEther(balance)} ${chain.nativeCurrency.symbol}`)
 
   const fees = await computeFees(publicClient)
-  const args = [
-    params.conv1, params.conv1_bias,
-    params.conv2, params.conv2_bias,
-    params.fc, params.fc_bias,
-  ]
 
   const estimate = await publicClient.estimateContractGas({
     address, abi, functionName: "mint", args, account,

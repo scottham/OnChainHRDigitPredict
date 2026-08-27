@@ -1,5 +1,5 @@
 // Generated from forge artifact -- do not edit by hand.
-// Regenerate: node scripts/gen-abi.mjs
+// Regenerate: npx tsx scripts/gen-abi.mjs
 
 export const MNIST_NFT_ABI = [
   {
@@ -50,9 +50,14 @@ export const MNIST_NFT_ABI = [
     "name": "mint",
     "inputs": [
       {
-        "name": "conv1Weight",
-        "type": "int256[][][][]",
-        "internalType": "int256[][][][]"
+        "name": "conv1Shape",
+        "type": "uint16[3]",
+        "internalType": "uint16[3]"
+      },
+      {
+        "name": "conv1Packed",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       },
       {
         "name": "conv1Bias",
@@ -60,9 +65,14 @@ export const MNIST_NFT_ABI = [
         "internalType": "int256[]"
       },
       {
-        "name": "conv2Weight",
-        "type": "int256[][][][]",
-        "internalType": "int256[][][][]"
+        "name": "conv2Shape",
+        "type": "uint16[3]",
+        "internalType": "uint16[3]"
+      },
+      {
+        "name": "conv2Packed",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       },
       {
         "name": "conv2Bias",
@@ -70,9 +80,14 @@ export const MNIST_NFT_ABI = [
         "internalType": "int256[]"
       },
       {
-        "name": "fcWeight",
-        "type": "int256[][]",
-        "internalType": "int256[][]"
+        "name": "fcShape",
+        "type": "uint16[2]",
+        "internalType": "uint16[2]"
+      },
+      {
+        "name": "fcPacked",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       },
       {
         "name": "fcBias",
