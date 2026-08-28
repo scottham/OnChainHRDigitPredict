@@ -11,7 +11,7 @@ import {
   type Stage,
   type StorageLayout,
 } from "@/lib/trace"
-import { explorerAddress } from "@/lib/contractConfig"
+import { explorerAddress, type Network } from "@/lib/networks"
 import { usePublicClient } from "wagmi"
 
 /** Monad's block gas limit -- the yardstick for "how big is this call". */
@@ -174,12 +174,14 @@ function Strips({
 
 function ContractCard({
   contract,
+  network,
   active,
   isHolder,
   slots,
   codeBytes,
 }: {
   contract: InferenceTrace["contracts"][number]
+  network: Network
   active: boolean
   /** The contract the weights live in. */
   isHolder: boolean
@@ -203,7 +205,7 @@ function ContractCard({
         {active && <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-400" />}
       </div>
       <a
-        href={explorerAddress(contract.address)}
+        href={explorerAddress(network, contract.address) ?? "#"}
         target="_blank"
         rel="noreferrer"
         className="mt-0.5 block font-mono text-[10px] text-violet-300/70 hover:text-violet-300"
@@ -271,6 +273,7 @@ function StorageGrid({ slots }: { slots: string[] }) {
 
 export default function ChainExecution({
   trace,
+  network,
   networkLabel,
   latencyMs,
   tokenId,
@@ -278,6 +281,8 @@ export default function ChainExecution({
   onStage,
 }: {
   trace: InferenceTrace | null
+  /** Which deployment the trace came from; undefined when none is configured. */
+  network: Network | undefined
   networkLabel: string
   /** Measured wall-clock time of the inference call itself. */
   latencyMs: number | null
@@ -352,7 +357,8 @@ export default function ChainExecution({
     onStage?.(stage?.key ?? null)
   }, [stage, onStage])
 
-  if (!trace) {
+  // No network means no trace to replay, and nothing here to address.
+  if (!trace || !network) {
     return (
       <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
         <h2 className="font-medium">Chain execution</h2>
@@ -406,6 +412,7 @@ export default function ChainExecution({
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <ContractCard
           contract={trace.contracts[0]}
+          network={network}
           active={false}
           isHolder
           slots={layout ? layout.slots.length : null}
@@ -416,6 +423,7 @@ export default function ChainExecution({
         </div>
         <ContractCard
           contract={trace.contracts[1]}
+          network={network}
           active={activeAddress === convAddress}
           isHolder={false}
           slots={null}
@@ -423,6 +431,7 @@ export default function ChainExecution({
         />
         <ContractCard
           contract={trace.contracts[2]}
+          network={network}
           active={!!activeAddress && activeAddress !== convAddress}
           isHolder={false}
           slots={null}
@@ -540,7 +549,7 @@ export default function ChainExecution({
                 if (!publicClient || !input) return
                 setLoadingLayout(true)
                 try {
-                  setLayout(await loadStorageLayout(publicClient, tokenId, input))
+                  setLayout(await loadStorageLayout(publicClient, network.contract, tokenId, input))
                 } catch {
                   setLayoutError("This node does not expose prestateTracer.")
                 } finally {

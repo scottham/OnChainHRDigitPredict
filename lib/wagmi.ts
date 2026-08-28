@@ -9,8 +9,9 @@ import {
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets"
 import { createConfig, http } from "wagmi"
+import type { Chain } from "viem"
 
-import { CHAIN, RPC_URL } from "./contractConfig"
+import { FALLBACK_CHAIN, NETWORKS } from "./networks"
 
 /**
  * WalletConnect needs a project id from https://cloud.reown.com. Without one
@@ -31,10 +32,23 @@ const connectors = connectorsForWallets([{ groupName: "Wallets", wallets }], {
   projectId: projectId || "onchain-mnist-demo",
 })
 
+/**
+ * Every configured network, so the user can switch at runtime and RainbowKit
+ * can offer the wallet the matching chain.
+ *
+ * createConfig reads chains[0] as it builds, so an empty list is a TypeError
+ * at import -- during a build that is a failed prerender, not a page saying it
+ * is unconfigured. Keep one placeholder chain so the app can render and say so.
+ */
+const chains = (NETWORKS.length > 0 ? NETWORKS.map((n) => n.chain) : [FALLBACK_CHAIN]) as unknown as readonly [
+  Chain,
+  ...Chain[],
+]
+
 export const wagmiConfig = createConfig({
-  chains: [CHAIN],
+  chains,
   connectors,
-  transports: { [CHAIN.id]: http(RPC_URL) },
+  transports: Object.fromEntries(chains.map((c) => [c.id, http(NETWORKS.find((n) => n.chain.id === c.id)?.rpcUrl)])),
   ssr: true,
   /**
    * Multicall batching must stay off.

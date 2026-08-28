@@ -4,7 +4,19 @@
     {
       "name": "onchain-mnist",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "onchain-mnist-anvil",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:anvil"
+      ],
       "port": 3000
     }
   ]

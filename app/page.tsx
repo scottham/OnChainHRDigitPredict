@@ -13,24 +13,53 @@ import InferenceTraceView from "@/components/InferenceTrace"
 import ChainExecution from "@/components/ChainExecution"
 import { traceInference, type InferenceTrace, type Stage } from "@/lib/trace"
 import { toMintArgs } from "@/lib/pack"
+import { mintGate } from "@/lib/chain-gate"
+import { describeArchitecture, readTokenCount, readTokenModel, type TokenModel } from "@/lib/model-registry"
 import { Button } from "@/components/ui/button"
+import { MNIST_NFT_ABI } from "@/lib/abi"
 import {
-  CHAIN,
-  CONTRACT_ADDRESS,
+  DEFAULT_CHAIN_ID,
   DEFAULT_TOKEN_ID,
-  IS_CONFIGURED,
-  MNIST_NFT_ABI,
+  activeNetwork,
+  chainName,
   explorerAddress,
-} from "@/lib/contractConfig"
+  explorerToken,
+  networkFor,
+} from "@/lib/networks"
+import NetworkPicker from "@/components/NetworkPicker"
 import monadLogo from "@/public/Monad Logo - Default - Logo Mark 1.png"
 
 type ContractState = "checking" | "ready" | "missing" | "unconfigured"
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
+/** keccak256("Transfer(address,address,uint256)") */
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
 export default function Page() {
   const canvasRef = useRef<CanvasBoardHandle>(null)
-  const publicClient = usePublicClient()
+  /**
+   * The network the app reads from. Persisted so a reload does not silently
+   * put someone back on a different chain than the one they chose.
+   */
+  const [activeChainId, setActiveChainId] = useState(DEFAULT_CHAIN_ID)
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem("network"))
+      if (saved && networkFor(saved)) setActiveChainId(saved)
+    } catch {
+      // private mode, blocked storage -- the default is fine
+    }
+  }, [])
+
+  /**
+   * Undefined when nothing is configured at all. The page still renders in that
+   * state and says so, so every read of it below has to survive it.
+   */
+  const network = activeNetwork(activeChainId)
+  const contractAddress = (network?.contract ?? "") as `0x${string}`
+  const isConfigured = Boolean(network)
+  const publicClient = usePublicClient({ chainId: activeChainId })
   const { data: walletClient } = useWalletClient()
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
@@ -44,6 +73,9 @@ export default function Page() {
   const [predicting, setPredicting] = useState(false)
   const [brush, setBrush] = useState(26)
   const [tokenId, setTokenId] = useState(DEFAULT_TOKEN_ID.toString())
+  /** Every minted token is a different model; the page runs the selected one. */
+  const [tokenCount, setTokenCount] = useState<number | null>(null)
+  const [tokenModel, setTokenModel] = useState<TokenModel | null>(null)
 
   const [trace, setTrace] = useState<InferenceTrace | null>(null)
   const [tracing, setTracing] = useState(false)
@@ -56,20 +88,34 @@ export default function Page() {
   const [modelParams, setModelParams] = useState<any>(null)
   const [minting, setMinting] = useState(false)
 
-  const onWrongChain = isConnected && chainId !== CHAIN.id
+  /**
+   * The chain that matters is the one the RPC node actually serves, not the one
+   * the config names. NEXT_PUBLIC_RPC_URL is overridable, so with
+   * the app pointed at a local node and the wallet on testnet, reads and writes
+   * go to different chains -- and a write lands at an address that holds the
+   * contract locally but nothing at all on the wallet's chain.
+   */
+  /**
+   * Until the node answers, the chain is *unknown*, not assumed. Falling back
+   * to CHAIN.id here is what made the old check vacuous: it compared the wallet
+   * against a constant that always matched, so a wallet on testnet passed while
+   * the app was reading a local node.
+   */
+  const expectedChainId = nodeChainId
+  const gate = mintGate({ isConnected, walletChainId: chainId, nodeChainId })
+  const chainUnknown = gate.reason === "chain-unknown"
+  const onWrongChain = gate.reason === "chain-mismatch"
+  /** A browser wallet cannot reach a node only this machine can see. */
+  const isLocalNode = nodeChainId === 31337
 
   /**
    * The RPC URL is overridable, so the configured chain is not proof of where
-   * the calls actually land -- pointing NEXT_PUBLIC_MONADTESTNET_RPC_URL at a
+   * the calls actually land -- pointing NEXT_PUBLIC_RPC_URL at a
    * local anvil would otherwise still read "Monad Testnet". Label from the id
    * the node itself reports.
    */
   const networkLabel =
-    nodeChainId === null || nodeChainId === CHAIN.id
-      ? CHAIN.name
-      : nodeChainId === 31337
-        ? "Anvil (local)"
-        : `chainId ${nodeChainId}`
+    nodeChainId === null ? (network?.chain.name ?? "no network") : chainName(nodeChainId)
 
   /**
    * Confirm the contract still exists before anyone draws.
@@ -79,14 +125,14 @@ export default function Page() {
    * "call reverted" only after the user has drawn something.
    */
   useEffect(() => {
-    if (!IS_CONFIGURED) {
+    if (!isConfigured) {
       setContractState("unconfigured")
       return
     }
     if (!publicClient) return
     let cancelled = false
     publicClient
-      .getBytecode({ address: CONTRACT_ADDRESS })
+      .getBytecode({ address: contractAddress })
       .then((code) => {
         if (cancelled) return
         setContractState(code && code !== "0x" ? "ready" : "missing")
@@ -99,7 +145,60 @@ export default function Page() {
     return () => {
       cancelled = true
     }
-  }, [publicClient])
+  }, [publicClient, contractAddress])
+
+  useEffect(() => {
+    if (!publicClient || contractState !== "ready") return
+    let cancelled = false
+    readTokenCount(publicClient, contractAddress)
+      .then((n) => !cancelled && setTokenCount(n))
+      .catch(() => !cancelled && setTokenCount(null))
+    return () => {
+      cancelled = true
+    }
+  }, [publicClient, contractState, contractAddress])
+
+  useEffect(() => {
+    if (!publicClient || contractState !== "ready") return
+    let cancelled = false
+    setTokenModel(null)
+    readTokenModel(publicClient, contractAddress, BigInt(tokenId))
+      .then((m) => !cancelled && setTokenModel(m))
+      .catch(() => !cancelled && setTokenModel(null))
+    return () => {
+      cancelled = true
+    }
+  }, [publicClient, contractState, tokenId])
+
+  /** Switching network invalidates the model list and everything measured. */
+  const handleSelectNetwork = useCallback((chainId: number) => {
+    setActiveChainId(chainId)
+    try {
+      localStorage.setItem("network", String(chainId))
+    } catch {
+      // storage blocked -- the choice just will not survive a reload
+    }
+    setContractState("checking")
+    setNodeChainId(null)
+    setTokenCount(null)
+    setTokenModel(null)
+    setTokenId(DEFAULT_TOKEN_ID.toString())
+    setPrediction(null)
+    setLatency(null)
+    setTrace(null)
+    setTraceError(null)
+    setTracedInput(null)
+  }, [])
+
+  /** Switching model invalidates everything measured from the previous one. */
+  const handleSelectToken = useCallback((next: string) => {
+    setTokenId(next)
+    setPrediction(null)
+    setLatency(null)
+    setTrace(null)
+    setTraceError(null)
+    setTracedInput(null)
+  }, [])
 
   const handleClear = useCallback(() => {
     canvasRef.current?.clearCanvas()
@@ -134,7 +233,7 @@ export default function Page() {
        * gas of work twice for a single click.
        */
       const started = performance.now()
-      const result = await traceInference(publicClient, BigInt(tokenId), grid)
+      const result = await traceInference(publicClient, contractAddress, BigInt(tokenId), grid)
       setLatency(Math.round(performance.now() - started))
       setPrediction(result.prediction)
       setTrace(result)
@@ -157,7 +256,7 @@ export default function Page() {
       try {
         const started = performance.now()
         const result = (await publicClient.readContract({
-          address: CONTRACT_ADDRESS,
+          address: contractAddress,
           abi: MNIST_NFT_ABI,
           functionName: "inference",
           args: [BigInt(tokenId), grid.map((row) => row.map((v) => BigInt(v)))],
@@ -177,30 +276,74 @@ export default function Page() {
 
   const handleMint = useCallback(async () => {
     if (!walletClient || !address) return
+    if (!network) {
+      toast.error("No network configured")
+      return
+    }
     if (!modelParams) {
       toast.warning("Upload a parameters file first")
       return
     }
+    if (!gate.allowed && gate.reason === "chain-unknown") {
+      toast.error("Still checking which chain the RPC serves", {
+        description: "Try again in a moment.",
+      })
+      return
+    }
+    if (!gate.allowed) {
+      toast.error("Wrong network", {
+        description: `Your wallet is on chain ${chainId}; this app is reading chain ${expectedChainId}.`,
+      })
+      return
+    }
+
     setMinting(true)
     try {
+      /**
+       * Ask the wallet's own node whether the contract is there. The read
+       * transport and the wallet can be pointed at different chains, and a
+       * transaction sent to an address with no code does not revert -- it
+       * succeeds as a plain transfer and mints nothing.
+       */
+      const code = (await walletClient.request({
+        method: "eth_getCode",
+        params: [contractAddress, "latest"],
+      } as any)) as string
+      if (!code || code === "0x") {
+        throw new Error(
+          `No contract at ${short(contractAddress)} on the chain your wallet is connected to.`
+        )
+      }
+
       /**
        * Weights go up packed, 32 int8 per word. Sent as int[] the same model is
        * ~108 KB of calldata, which MetaMask rejects outright with "Request too
        * large" before the transaction ever reaches the chain.
        */
       const hash = await walletClient.writeContract({
-        address: CONTRACT_ADDRESS,
+        address: contractAddress,
         abi: MNIST_NFT_ABI,
         functionName: "mint",
         args: toMintArgs(modelParams),
-        chain: CHAIN,
+        chain: network.chain,
         account: address,
       })
       toast.info("Mint submitted", { description: short(hash) })
 
       const receipt = await publicClient!.waitForTransactionReceipt({ hash })
-      const minted = BigInt(receipt.logs[0].topics[3]!)
-      setTokenId(minted.toString())
+      // Match the Transfer this contract emitted rather than trusting logs[0].
+      const transfer = receipt.logs.find(
+        (log) =>
+          log.address.toLowerCase() === contractAddress.toLowerCase() &&
+          log.topics[0] === TRANSFER_TOPIC &&
+          log.topics[3] !== undefined
+      )
+      if (!transfer) {
+        throw new Error("Transaction landed but minted nothing -- no Transfer event from the contract.")
+      }
+      const minted = BigInt(transfer.topics[3]!)
+      setTokenCount((n) => Math.max(n ?? 0, Number(minted)))
+      handleSelectToken(minted.toString())
       toast.success(`Minted token ${minted}`, { description: "Selected for inference." })
     } catch (err: any) {
       const detail: string = err?.shortMessage || err?.message || "unknown error"
@@ -212,7 +355,7 @@ export default function Page() {
     } finally {
       setMinting(false)
     }
-  }, [walletClient, address, modelParams, publicClient])
+  }, [walletClient, address, modelParams, publicClient, gate, chainId, expectedChainId])
 
   return (
     <div className="min-h-svh bg-gradient-to-b from-background via-background to-violet-950/20">
@@ -229,30 +372,45 @@ export default function Page() {
               </p>
             </div>
           </div>
-          <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+          <div className="flex items-center gap-2">
+            <NetworkPicker active={network} onChange={handleSelectNetwork} />
+            <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+          </div>
         </header>
 
         {contractState === "missing" && (
           <Banner tone="danger" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            No contract code at <code className="font-mono">{short(CONTRACT_ADDRESS)}</code> on {CHAIN.name}.
-            The testnet may have been reset again — redeploy and update{" "}
-            <code className="font-mono">NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS</code>.
+            No contract code at <code className="font-mono">{short(contractAddress)}</code> on{" "}
+            {network?.chain.name}. The chain may have been reset again — redeploy and update{" "}
+            <code className="font-mono">NEXT_PUBLIC_CONTRACT_ADDRESS_{activeChainId}</code>.
           </Banner>
         )}
         {contractState === "unconfigured" && (
           <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            <code className="font-mono">NEXT_PUBLIC_MONADTESTNET_CONTRACT_ADDRESS</code> is not set.
+            No network is configured. Set{" "}
+            <code className="font-mono">NEXT_PUBLIC_CONTRACT_ADDRESS_&lt;chainId&gt;</code> to a
+            deployed registry — see <code className="font-mono">.env.example</code>.
           </Banner>
         )}
         {onWrongChain && (
           <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            Wallet is on the wrong network.
-            <button
-              onClick={() => switchChain({ chainId: CHAIN.id })}
-              className="ml-2 underline underline-offset-4 hover:no-underline"
-            >
-              Switch to {CHAIN.name}
-            </button>
+            {isLocalNode ? (
+              <>
+                This app is reading a local node (chainId {nodeChainId}); your wallet is on chain{" "}
+                {chainId}. A browser wallet cannot write to a local node — run{" "}
+                <code className="font-mono">npm run dev</code> to use {network?.chain.name}.
+              </>
+            ) : (
+              <>
+                Wallet is on chain {chainId}; this app is reading {networkLabel}.
+                <button
+                  onClick={() => switchChain({ chainId: expectedChainId! })}
+                  className="ml-2 underline underline-offset-4 hover:no-underline"
+                >
+                  Switch to {networkLabel}
+                </button>
+              </>
+            )}
           </Banner>
         )}
 
@@ -330,21 +488,80 @@ export default function Page() {
                 <Cpu className="h-4 w-4 text-violet-400" />
                 Model
               </h2>
+              {/* The model is the token, so everything below describes the
+                  selected id -- read from its storage, not hardcoded. */}
+              <label className="mb-3 flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">Token</span>
+                {tokenCount && tokenCount > 0 ? (
+                  <select
+                    value={tokenId}
+                    onChange={(e) => handleSelectToken(e.target.value)}
+                    className="rounded-lg border border-border/60 bg-black/40 px-2 py-1 font-mono text-xs outline-none focus:border-violet-400/60"
+                  >
+                    {Array.from({ length: tokenCount }, (_, i) => String(i + 1)).map((id) => (
+                      <option key={id} value={id}>
+                        #{id}
+                        {id === DEFAULT_TOKEN_ID.toString() ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="font-mono text-xs">#{tokenId}</span>
+                )}
+              </label>
+
               <div className="space-y-2 text-xs">
-                <Row label="Architecture" value="2×conv + fc" />
-                <Row label="Weights" value="int8, on-chain" />
-                <Row label="Test accuracy" value="98.13%" />
+                <Row
+                  label="Architecture"
+                  value={tokenModel ? describeArchitecture(tokenModel) : "reading…"}
+                />
+                <Row
+                  label="Weights"
+                  value={
+                    tokenModel
+                      ? `${tokenModel.weights.toLocaleString()} int8 in ${tokenModel.words} words`
+                      : "reading…"
+                  }
+                />
+                <Row label="Biases" value={tokenModel ? `${tokenModel.biases} × int256` : "reading…"} />
+                <Row
+                  label="Owner"
+                  value={tokenModel?.owner ? short(tokenModel.owner) : tokenModel ? "not minted" : "reading…"}
+                />
+                {tokenId === DEFAULT_TOKEN_ID.toString() ? (
+                  <Row label="Test accuracy" value="98.13%" />
+                ) : (
+                  <Row label="Test accuracy" value="not measured" />
+                )}
               </div>
-              {IS_CONFIGURED && (
-                <a
-                  href={explorerAddress(CONTRACT_ADDRESS)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 inline-flex items-center gap-1.5 font-mono text-xs text-violet-400 hover:text-violet-300"
-                >
-                  {short(CONTRACT_ADDRESS)}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+              {tokenId !== DEFAULT_TOKEN_ID.toString() && (
+                <p className="mt-2 text-[10px] leading-tight text-muted-foreground">
+                  Accuracy is not stored on-chain. 98.13% is this repo&apos;s own model, measured
+                  offline against the MNIST test set; nothing is known about other tokens&apos;
+                  weights.
+                </p>
+              )}
+              {network && (
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <a
+                    href={explorerToken(network, tokenId) ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 font-mono text-xs text-violet-400 hover:text-violet-300"
+                  >
+                    token #{tokenId}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <a
+                    href={explorerAddress(network, contractAddress) ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-violet-300"
+                  >
+                    {short(contractAddress)}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
               )}
             </div>
 
@@ -391,7 +608,7 @@ export default function Page() {
 
                 <Button
                   onClick={handleMint}
-                  disabled={!isConnected || onWrongChain || !modelParams || minting}
+                  disabled={!gate.allowed || !modelParams || minting}
                   className="w-full gap-2"
                   size="sm"
                 >
@@ -406,6 +623,7 @@ export default function Page() {
         <div className="mt-6 space-y-6">
           <ChainExecution
             trace={trace}
+            network={network}
             networkLabel={networkLabel}
             latencyMs={latency}
             tokenId={BigInt(tokenId)}
