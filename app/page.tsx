@@ -27,6 +27,8 @@ import {
   networkFor,
 } from "@/lib/networks"
 import NetworkPicker from "@/components/NetworkPicker"
+import LanguagePicker from "@/components/LanguagePicker"
+import { useT } from "@/lib/i18n"
 import monadLogo from "@/public/Monad Logo - Default - Logo Mark 1.png"
 
 type ContractState = "checking" | "ready" | "missing" | "unconfigured"
@@ -37,6 +39,7 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 export default function Page() {
+  const t = useT()
   const canvasRef = useRef<CanvasBoardHandle>(null)
   /**
    * The network the app reads from. Persisted so a reload does not silently
@@ -115,7 +118,7 @@ export default function Page() {
    * the node itself reports.
    */
   const networkLabel =
-    nodeChainId === null ? (network?.chain.name ?? "no network") : chainName(nodeChainId)
+    nodeChainId === null ? (network?.chain.name ?? t.common.noNetwork) : chainName(nodeChainId)
 
   /**
    * Confirm the contract still exists before anyone draws.
@@ -213,7 +216,7 @@ export default function Page() {
   const handlePredict = useCallback(async () => {
     const grid = canvasRef.current?.getProcessedInput()
     if (!grid) {
-      toast.warning("Draw a digit first")
+      toast.warning(t.toast.drawFirst)
       return
     }
     if (!publicClient) return
@@ -238,10 +241,10 @@ export default function Page() {
       setPrediction(result.prediction)
       setTrace(result)
     } catch (err: any) {
-      const detail: string = err?.shortMessage || err?.message || "unknown error"
+      const detail: string = err?.shortMessage || err?.message || t.toast.unknownError
       if (/Token does not exist/.test(detail)) {
-        toast.error(`Token ${tokenId} has no model`, {
-          description: "No weights are stored under this id. Try token 1, or mint a model below.",
+        toast.error(t.toast.noModelTitle(tokenId), {
+          description: t.toast.noModelBody,
         })
         setPredicting(false)
         setTracing(false)
@@ -252,7 +255,7 @@ export default function Page() {
       // just cannot show the work. Fall back to a plain call rather than
       // failing the prediction.
       setTrace(null)
-      setTraceError(`Could not trace this call: ${detail.split("\n")[0]}`)
+      setTraceError(t.toast.traceFailed(detail.split("\n")[0]))
       try {
         const started = performance.now()
         const result = (await publicClient.readContract({
@@ -264,7 +267,7 @@ export default function Page() {
         setLatency(Math.round(performance.now() - started))
         setPrediction(Number(result))
       } catch (fallbackErr: any) {
-        toast.error("Inference failed", {
+        toast.error(t.toast.inferenceFailed, {
           description: (fallbackErr?.shortMessage || fallbackErr?.message || detail).split("\n")[0],
         })
       }
@@ -277,22 +280,22 @@ export default function Page() {
   const handleMint = useCallback(async () => {
     if (!walletClient || !address) return
     if (!network) {
-      toast.error("No network configured")
+      toast.error(t.toast.noNetwork)
       return
     }
     if (!modelParams) {
-      toast.warning("Upload a parameters file first")
+      toast.warning(t.toast.uploadFirst)
       return
     }
     if (!gate.allowed && gate.reason === "chain-unknown") {
-      toast.error("Still checking which chain the RPC serves", {
-        description: "Try again in a moment.",
+      toast.error(t.toast.chainUnknownTitle, {
+        description: t.toast.chainUnknownBody,
       })
       return
     }
     if (!gate.allowed) {
-      toast.error("Wrong network", {
-        description: `Your wallet is on chain ${chainId}; this app is reading chain ${expectedChainId}.`,
+      toast.error(t.toast.wrongNetworkTitle, {
+        description: t.toast.wrongNetworkBody(chainId, expectedChainId),
       })
       return
     }
@@ -310,9 +313,7 @@ export default function Page() {
         params: [contractAddress, "latest"],
       } as any)) as string
       if (!code || code === "0x") {
-        throw new Error(
-          `No contract at ${short(contractAddress)} on the chain your wallet is connected to.`
-        )
+        throw new Error(t.toast.noContractOnWalletChain(short(contractAddress)))
       }
 
       /**
@@ -328,7 +329,7 @@ export default function Page() {
         chain: network.chain,
         account: address,
       })
-      toast.info("Mint submitted", { description: short(hash) })
+      toast.info(t.toast.mintSubmitted, { description: short(hash) })
 
       const receipt = await publicClient!.waitForTransactionReceipt({ hash })
       // Match the Transfer this contract emitted rather than trusting logs[0].
@@ -339,18 +340,16 @@ export default function Page() {
           log.topics[3] !== undefined
       )
       if (!transfer) {
-        throw new Error("Transaction landed but minted nothing -- no Transfer event from the contract.")
+        throw new Error(t.toast.mintedNothing)
       }
       const minted = BigInt(transfer.topics[3]!)
       setTokenCount((n) => Math.max(n ?? 0, Number(minted)))
       handleSelectToken(minted.toString())
-      toast.success(`Minted token ${minted}`, { description: "Selected for inference." })
+      toast.success(t.toast.mintedTitle(minted.toString()), { description: t.toast.mintedBody })
     } catch (err: any) {
-      const detail: string = err?.shortMessage || err?.message || "unknown error"
-      toast.error("Mint failed", {
-        description: /int8/i.test(detail)
-          ? "Weights fall outside int8. Regenerate them with the current train.py."
-          : detail.split("\n")[0],
+      const detail: string = err?.shortMessage || err?.message || t.toast.unknownError
+      toast.error(t.toast.mintFailed, {
+        description: /int8/i.test(detail) ? t.toast.weightsOutOfRange : detail.split("\n")[0],
       })
     } finally {
       setMinting(false)
@@ -365,14 +364,13 @@ export default function Page() {
             <Image src={monadLogo} alt="" width={36} height={36} className="rounded-lg" />
             <div>
               <h1 className="text-lg font-semibold leading-tight tracking-tight sm:text-xl">
-                On-Chain Digit Recognition
+                {t.header.title}
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Every multiply-accumulate runs inside an EVM contract
-              </p>
+              <p className="text-xs text-muted-foreground">{t.header.tagline}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <LanguagePicker />
             <NetworkPicker active={network} onChange={handleSelectNetwork} />
             <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
           </div>
@@ -380,34 +378,30 @@ export default function Page() {
 
         {contractState === "missing" && (
           <Banner tone="danger" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            No contract code at <code className="font-mono">{short(contractAddress)}</code> on{" "}
-            {network?.chain.name}. The chain may have been reset again — redeploy and update{" "}
-            <code className="font-mono">NEXT_PUBLIC_CONTRACT_ADDRESS_{activeChainId}</code>.
+            {t.banner.missingContract(
+              short(contractAddress),
+              network?.chain.name ?? t.common.noNetwork,
+              `NEXT_PUBLIC_CONTRACT_ADDRESS_${activeChainId}`
+            )}
           </Banner>
         )}
         {contractState === "unconfigured" && (
           <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            No network is configured. Set{" "}
-            <code className="font-mono">NEXT_PUBLIC_CONTRACT_ADDRESS_&lt;chainId&gt;</code> to a
-            deployed registry — see <code className="font-mono">.env.example</code>.
+            {t.banner.unconfigured()}
           </Banner>
         )}
         {onWrongChain && (
           <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
             {isLocalNode ? (
-              <>
-                This app is reading a local node (chainId {nodeChainId}); your wallet is on chain{" "}
-                {chainId}. A browser wallet cannot write to a local node — run{" "}
-                <code className="font-mono">npm run dev</code> to use {network?.chain.name}.
-              </>
+              t.banner.localNode(nodeChainId!, chainId, network?.chain.name ?? t.common.noNetwork)
             ) : (
               <>
-                Wallet is on chain {chainId}; this app is reading {networkLabel}.
+                {t.banner.wrongChain(chainId, networkLabel)}
                 <button
                   onClick={() => switchChain({ chainId: expectedChainId! })}
                   className="ml-2 underline underline-offset-4 hover:no-underline"
                 >
-                  Switch to {networkLabel}
+                  {t.banner.switchTo(networkLabel)}
                 </button>
               </>
             )}
@@ -417,8 +411,8 @@ export default function Page() {
         <main className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
             <div className="mb-4 flex items-baseline justify-between">
-              <h2 className="font-medium">Draw a digit</h2>
-              <span className="text-xs text-muted-foreground">0 – 9</span>
+              <h2 className="font-medium">{t.canvas.title}</h2>
+              <span className="text-xs text-muted-foreground">{t.canvas.range}</span>
             </div>
 
             <div className="mx-auto w-full max-w-[420px]">
@@ -427,7 +421,7 @@ export default function Page() {
 
             <div className="mt-4 flex flex-wrap items-center gap-4">
               <label className="flex flex-1 items-center gap-3 text-xs text-muted-foreground">
-                Brush
+                {t.canvas.brush}
                 <input
                   type="range"
                   min={12}
@@ -439,7 +433,7 @@ export default function Page() {
               </label>
               <Button variant="outline" size="sm" onClick={handleClear} className="gap-2">
                 <Eraser className="h-4 w-4" />
-                Clear
+                {t.canvas.clear}
               </Button>
               <Button
                 size="sm"
@@ -448,18 +442,16 @@ export default function Page() {
                 className="gap-2 bg-violet-600 hover:bg-violet-700"
               >
                 {predicting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {predicting ? "Running on-chain…" : "Predict"}
+                {predicting ? t.canvas.predicting : t.canvas.predict}
               </Button>
             </div>
 
-            <p className="mt-3 text-xs text-muted-foreground">
-              Inference is a read-only call — no wallet, no gas, no signature.
-            </p>
+            <p className="mt-3 text-xs text-muted-foreground">{t.canvas.readOnlyNote}</p>
           </section>
 
           <aside className="flex flex-col gap-6">
             <div className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
-              <h2 className="mb-4 font-medium">Prediction</h2>
+              <h2 className="mb-4 font-medium">{t.prediction.title}</h2>
               <div className="flex items-center gap-5">
                 <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-black/40">
                   {predicting ? (
@@ -467,18 +459,21 @@ export default function Page() {
                   ) : prediction !== null ? (
                     <span className="text-5xl font-semibold tabular-nums text-violet-300">{prediction}</span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
+                    <span className="text-xs text-muted-foreground">{t.common.none}</span>
                   )}
                 </div>
                 <div className="min-w-0 space-y-2 text-xs">
-                  <Row label="Latency" value={latency !== null ? `${latency} ms` : "—"} />
-                  <Row label="Network" value={networkLabel} />
-                  <Row label="Token" value={`#${tokenId}`} />
+                  <Row
+                    label={t.prediction.latency}
+                    value={latency !== null ? t.prediction.ms(latency) : t.common.none}
+                  />
+                  <Row label={t.prediction.network} value={networkLabel} />
+                  <Row label={t.prediction.token} value={`#${tokenId}`} />
                 </div>
               </div>
 
               <div className="mt-5 border-t border-border/60 pt-4">
-                <p className="mb-2 text-xs text-muted-foreground">What the model receives (28×28)</p>
+                <p className="mb-2 text-xs text-muted-foreground">{t.prediction.inputCaption}</p>
                 <DigitPreview grid={preview} />
               </div>
             </div>
@@ -486,12 +481,12 @@ export default function Page() {
             <div className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
               <h2 className="mb-3 flex items-center gap-2 font-medium">
                 <Cpu className="h-4 w-4 text-violet-400" />
-                Model
+                {t.model.title}
               </h2>
               {/* The model is the token, so everything below describes the
                   selected id -- read from its storage, not hardcoded. */}
               <label className="mb-3 flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">Token</span>
+                <span className="text-muted-foreground">{t.model.token}</span>
                 {tokenCount && tokenCount > 0 ? (
                   <select
                     value={tokenId}
@@ -501,7 +496,7 @@ export default function Page() {
                     {Array.from({ length: tokenCount }, (_, i) => String(i + 1)).map((id) => (
                       <option key={id} value={id}>
                         #{id}
-                        {id === DEFAULT_TOKEN_ID.toString() ? " (default)" : ""}
+                        {id === DEFAULT_TOKEN_ID.toString() ? t.model.defaultSuffix : ""}
                       </option>
                     ))}
                   </select>
@@ -512,33 +507,39 @@ export default function Page() {
 
               <div className="space-y-2 text-xs">
                 <Row
-                  label="Architecture"
-                  value={tokenModel ? describeArchitecture(tokenModel) : "reading…"}
+                  label={t.model.architecture}
+                  value={tokenModel ? describeArchitecture(tokenModel) : t.common.reading}
                 />
                 <Row
-                  label="Weights"
+                  label={t.model.weights}
                   value={
                     tokenModel
-                      ? `${tokenModel.weights.toLocaleString()} int8 in ${tokenModel.words} words`
-                      : "reading…"
+                      ? t.model.weightsValue(tokenModel.weights.toLocaleString(), tokenModel.words)
+                      : t.common.reading
                   }
                 />
-                <Row label="Biases" value={tokenModel ? `${tokenModel.biases} × int256` : "reading…"} />
                 <Row
-                  label="Owner"
-                  value={tokenModel?.owner ? short(tokenModel.owner) : tokenModel ? "not minted" : "reading…"}
+                  label={t.model.biases}
+                  value={tokenModel ? t.model.biasesValue(tokenModel.biases) : t.common.reading}
                 />
-                {tokenId === DEFAULT_TOKEN_ID.toString() ? (
-                  <Row label="Test accuracy" value="98.13%" />
-                ) : (
-                  <Row label="Test accuracy" value="not measured" />
-                )}
+                <Row
+                  label={t.model.owner}
+                  value={
+                    tokenModel?.owner
+                      ? short(tokenModel.owner)
+                      : tokenModel
+                        ? t.model.notMinted
+                        : t.common.reading
+                  }
+                />
+                <Row
+                  label={t.model.accuracy}
+                  value={tokenId === DEFAULT_TOKEN_ID.toString() ? "98.13%" : t.model.notMeasured}
+                />
               </div>
               {tokenId !== DEFAULT_TOKEN_ID.toString() && (
                 <p className="mt-2 text-[10px] leading-tight text-muted-foreground">
-                  Accuracy is not stored on-chain. 98.13% is this repo&apos;s own model, measured
-                  offline against the MNIST test set; nothing is known about other tokens&apos;
-                  weights.
+                  {t.model.accuracyNote}
                 </p>
               )}
               {network && (
@@ -549,7 +550,7 @@ export default function Page() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 font-mono text-xs text-violet-400 hover:text-violet-300"
                   >
-                    token #{tokenId}
+                    {t.model.tokenLink(tokenId)}
                     <ExternalLink className="h-3 w-3" />
                   </a>
                   <a
@@ -568,20 +569,19 @@ export default function Page() {
             <details className="group rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
               <summary className="cursor-pointer list-none font-medium marker:content-none">
                 <span className="flex items-center justify-between">
-                  Mint your own model
-                  <span className="text-xs text-muted-foreground group-open:hidden">Advanced</span>
+                  {t.mint.title}
+                  <span className="text-xs text-muted-foreground group-open:hidden">
+                    {t.mint.advanced}
+                  </span>
                 </span>
               </summary>
 
-              <p className="mt-3 text-xs text-muted-foreground">
-                Upload the JSON produced by <code className="font-mono">model/train.py</code>. One transaction,
-                one confirmation.
-              </p>
+              <p className="mt-3 text-xs text-muted-foreground">{t.mint.intro()}</p>
 
               <div className="mt-4 space-y-3">
                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-xs hover:border-violet-500/60 hover:bg-violet-500/5">
                   <Upload className="h-4 w-4" />
-                  <span className="truncate">{modelFile ?? "Choose parameters JSON"}</span>
+                  <span className="truncate">{modelFile ?? t.mint.choose}</span>
                   <input
                     type="file"
                     accept=".json"
@@ -593,14 +593,14 @@ export default function Page() {
                         const parsed = JSON.parse(await file.text())
                         const required = ["conv1", "conv1_bias", "conv2", "conv2_bias", "fc", "fc_bias"]
                         const missing = required.filter((k) => !(k in parsed))
-                        if (missing.length) throw new Error(`missing keys: ${missing.join(", ")}`)
+                        if (missing.length) throw new Error(t.toast.missingKeys(missing.join(", ")))
                         setModelParams(parsed)
                         setModelFile(file.name)
-                        toast.success("Parameters loaded")
+                        toast.success(t.toast.paramsLoaded)
                       } catch (err: any) {
                         setModelParams(null)
                         setModelFile(null)
-                        toast.error("Could not read file", { description: err.message })
+                        toast.error(t.toast.readFileFailed, { description: err.message })
                       }
                     }}
                   />
@@ -613,7 +613,7 @@ export default function Page() {
                   size="sm"
                 >
                   {minting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {!isConnected ? "Connect wallet to mint" : minting ? "Minting…" : "Mint model NFT"}
+                  {!isConnected ? t.mint.connect : minting ? t.mint.minting : t.mint.submit}
                 </Button>
               </div>
             </details>
@@ -646,7 +646,7 @@ export default function Page() {
             rel="noopener noreferrer"
             className="hover:text-foreground"
           >
-            Source on GitHub
+            {t.footer.source}
           </a>
         </footer>
       </div>
@@ -657,7 +657,10 @@ export default function Page() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
+      {/* The label never wraps: it is two or three characters in Chinese, and
+          breaking it mid-word to make room for the value reads as a typo. The
+          value truncates instead. */}
+      <span className="whitespace-nowrap text-muted-foreground">{label}</span>
       <span className="truncate font-medium tabular-nums">{value}</span>
     </div>
   )

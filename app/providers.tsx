@@ -7,6 +7,7 @@ import { RainbowKitProvider, darkTheme, lightTheme } from "@rainbow-me/rainbowki
 import "@rainbow-me/rainbowkit/styles.css"
 
 import { wagmiConfig } from "@/lib/wagmi"
+import { I18nProvider, useI18n } from "@/lib/i18n"
 
 const accent = {
   accentColor: "#7c3aed",
@@ -29,12 +30,27 @@ export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
 
   return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={rainbowTheme} modalSize="compact">
-          {children}
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <I18nProvider>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <LocalizedRainbowKit>{children}</LocalizedRainbowKit>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </I18nProvider>
+  )
+}
+
+/**
+ * RainbowKit owns the copy in the connect button and the wallet modal, so it
+ * has to be told the locale too -- otherwise picking 中文 leaves an English
+ * dialog sitting in the middle of a Chinese page.
+ */
+function LocalizedRainbowKit({ children }: { children: ReactNode }) {
+  const { entry } = useI18n()
+
+  return (
+    <RainbowKitProvider theme={rainbowTheme} modalSize="compact" locale={entry.rainbowkit}>
+      {children}
+    </RainbowKitProvider>
   )
 }

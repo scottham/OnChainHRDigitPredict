@@ -12,6 +12,7 @@ import {
   type StorageLayout,
 } from "@/lib/trace"
 import { explorerAddress, type Network } from "@/lib/networks"
+import { useT, type Messages } from "@/lib/i18n"
 import { usePublicClient } from "wagmi"
 
 /** Monad's block gas limit -- the yardstick for "how big is this call". */
@@ -29,6 +30,15 @@ const FN_COLOR: Record<CallRecord["fn"], string> = {
 
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
+/**
+ * The translated role for a contract, or undefined when the trace's own
+ * English wording should stand (the other two roles are lists of function
+ * names, which no locale translates).
+ */
+function roleFor(t: Messages, label: string): string | undefined {
+  return label in t.execution.role ? t.execution.role[label as keyof Messages["execution"]["role"]] : undefined
+}
 const gasLabel = (g: number) => (g >= 1e6 ? `${(g / 1e6).toFixed(2)}M` : g.toLocaleString())
 
 /** Index of the call executing at `gas` gas into the run. */
@@ -63,6 +73,7 @@ function Strips({
   cursor: number
   onHover: (index: number | null) => void
 }) {
+  const t = useT()
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [width, setWidth] = useState(0)
@@ -114,7 +125,7 @@ function Strips({
     }
 
     // Strip 1 -- gas as the x axis.
-    drawLane(12, "x = gas consumed (the EVM's clock)")
+    drawLane(12, t.execution.axisGas)
     for (const call of trace.calls) {
       const x = PAD + (call.gasBefore / trace.gasCalls) * plot
       const w = (call.gas / trace.gasCalls) * plot
@@ -125,7 +136,7 @@ function Strips({
     // Strip 2 -- call index as the x axis. Same calls, unrecognizably different
     // shape: relu is 99.8% of the calls and 1.5% of the gas.
     const top = BLOCK_H + 38
-    drawLane(top, "x = call index (same calls, evenly spaced)")
+    drawLane(top, t.execution.axisIndex)
     const step = plot / trace.calls.length
     trace.calls.forEach((call, i) => {
       ctx.fillStyle = FN_COLOR[call.fn]
@@ -135,7 +146,7 @@ function Strips({
       const w = call.fn === "relu" ? Math.max(step, 0.35) : Math.max(step, 2)
       ctx.fillRect(PAD + i * step, top + laneOf(call) * (LANE_H + GAP), w, LANE_H)
     })
-  }, [trace, width, HEIGHT, BLOCK_H, plot])
+  }, [trace, width, HEIGHT, BLOCK_H, plot, t])
 
   const handleMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -189,6 +200,14 @@ function ContractCard({
   slots: number | null
   codeBytes: number | null
 }) {
+  const t = useT()
+  /**
+   * The trace labels each contract with a role in English. Where a locale has
+   * its own wording for that role it wins; the function lists ("conv2D ·
+   * maxPool2D") are identifiers, so they fall through untranslated.
+   */
+  const role = roleFor(t, contract.label) ?? contract.role
+
   return (
     <div
       className={`min-w-0 flex-1 rounded-xl border p-3 transition-colors ${
@@ -212,28 +231,28 @@ function ContractCard({
       >
         {short(contract.address)}
       </a>
-      <p className="mt-1 text-[10px] leading-tight text-muted-foreground">{contract.role}</p>
+      <p className="mt-1 text-[10px] leading-tight text-muted-foreground">{role}</p>
       <dl className="mt-2 space-y-0.5 font-mono text-[10px] text-muted-foreground">
         <div className="flex justify-between gap-2">
-          <dt>calls in</dt>
+          <dt>{t.execution.card.callsIn}</dt>
           <dd className="text-foreground/80">{contract.calls.toLocaleString()}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt>{isHolder ? "self gas" : "gas"}</dt>
+          <dt>{isHolder ? t.execution.card.selfGas : t.execution.card.gas}</dt>
           <dd className="text-foreground/80">
-            {isHolder && contract.gas <= 0 ? "—" : gasLabel(contract.gas)}
+            {isHolder && contract.gas <= 0 ? t.common.none : gasLabel(contract.gas)}
           </dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt>{isHolder ? "storage read" : "code"}</dt>
+          <dt>{isHolder ? t.execution.card.storageRead : t.execution.card.code}</dt>
           <dd className="text-foreground/80">
             {isHolder
               ? slots === null
-                ? "—"
-                : `${slots} words`
+                ? t.common.none
+                : t.execution.card.words(slots)
               : codeBytes === null
-                ? "—"
-                : `${(codeBytes / 1024).toFixed(1)} KB`}
+                ? t.common.none
+                : t.execution.card.kilobytes((codeBytes / 1024).toFixed(1))}
           </dd>
         </div>
       </dl>
@@ -243,6 +262,7 @@ function ContractCard({
 
 /** The weight slots, one square per 256-bit storage word actually read. */
 function StorageGrid({ slots }: { slots: string[] }) {
+  const t = useT()
   const [hover, setHover] = useState<number | null>(null)
   return (
     <div>
@@ -257,15 +277,9 @@ function StorageGrid({ slots }: { slots: string[] }) {
         ))}
       </div>
       <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-        {hover === null ? (
-          <>
-            {slots.length} storage words read · 32 int8 weights packed per word
-          </>
-        ) : (
-          <>
-            slot {hover}: {slots[hover].slice(0, 18)}…{slots[hover].slice(-6)}
-          </>
-        )}
+        {hover === null
+          ? t.execution.slotsRead(slots.length)
+          : t.execution.slotDetail(hover, slots[hover].slice(0, 18), slots[hover].slice(-6))}
       </p>
     </div>
   )
@@ -291,6 +305,7 @@ export default function ChainExecution({
   input: number[][] | null
   onStage?: (stage: Stage["key"] | null) => void
 }) {
+  const t = useT()
   const publicClient = usePublicClient()
   const [progress, setProgress] = useState(1)
   /** Measured wall-clock per layer, filled in on demand. */
@@ -361,10 +376,8 @@ export default function ChainExecution({
   if (!trace || !network) {
     return (
       <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
-        <h2 className="font-medium">Chain execution</h2>
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          Run a prediction to replay the call it made on-chain.
-        </p>
+        <h2 className="font-medium">{t.execution.title}</h2>
+        <p className="py-8 text-center text-sm text-muted-foreground">{t.execution.empty}</p>
       </section>
     )
   }
@@ -381,33 +394,22 @@ export default function ChainExecution({
   return (
     <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-medium">Chain execution</h2>
+        <h2 className="font-medium">{t.execution.title}</h2>
         <span className="font-mono text-[11px] text-muted-foreground">
-          {networkLabel} · block #{trace.blockNumber.toString()}
+          {t.execution.blockLabel(networkLabel, trace.blockNumber.toString())}
         </span>
       </div>
       <p className="mb-1 text-xs text-muted-foreground">
-        One prediction is {trace.totalCalls.toLocaleString()} external calls across{" "}
-        {trace.contracts.length} contracts, burning {gasKnown ? "" : "at least "}
-        {gasLabel(gasShown)} gas — {blockShare.toFixed(0)}% of a Monad block. The strips below
-        show <em>which contract is executing and what it costs</em>. Everything here comes from
-        the one traced call that produced the prediction; the network is not asked to run the
-        inference twice.
-        {!gasKnown && (
-          <>
-            {" "}
-            (This RPC reports the gas <em>supplied</em> as the root call&apos;s{" "}
-            <code className="font-mono">gasUsed</code>, so the total is summed over the external
-            calls instead.)
-          </>
+        {t.execution.summary(
+          trace.totalCalls.toLocaleString(),
+          trace.contracts.length,
+          gasLabel(gasShown),
+          !gasKnown,
+          blockShare.toFixed(0)
         )}
+        {!gasKnown && t.execution.gasUnknownNote()}
       </p>
-      <p className="mb-4 text-xs text-muted-foreground">
-        The replay runs at real speed — it lasts the {realMs} ms the call actually took, which is
-        why it is over almost before you see it. Within that window the play head advances by{" "}
-        <strong>gas, not seconds</strong>: a trace records what each call cost, never when it ran,
-        so gas is the only per-step clock the EVM has. Drag the slider to walk through it by hand.
-      </p>
+      <p className="mb-4 text-xs text-muted-foreground">{t.execution.replayNote(realMs)}</p>
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <ContractCard
@@ -477,7 +479,7 @@ export default function ChainExecution({
           setProgress(Number(e.target.value) / 1000)
         }}
         className="mt-3 w-full accent-violet-500"
-        aria-label="Seek through the call sequence"
+        aria-label={t.execution.seekLabel}
       />
 
       <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -486,7 +488,7 @@ export default function ChainExecution({
           className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-black/30 px-2.5 py-1 text-xs hover:border-violet-400/60"
         >
           {playing ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-          {playing ? "Pause" : progress >= 1 ? `Replay (${realMs} ms)` : "Play"}
+          {playing ? t.execution.pause : progress >= 1 ? t.execution.replay(realMs) : t.execution.play}
         </button>
         <button
           onClick={async () => {
@@ -501,11 +503,18 @@ export default function ChainExecution({
           disabled={measuring}
           className="rounded-lg border border-border/60 bg-black/30 px-2.5 py-1 text-xs hover:border-emerald-400/60 disabled:opacity-50"
         >
-          {measuring ? "Timing layers…" : stageTimes ? "Re-time layers" : "Time each layer for real"}
+          {measuring
+            ? t.execution.timing
+            : stageTimes
+              ? t.execution.retime
+              : t.execution.timeLayers}
         </button>
         <span className="font-mono text-[11px] text-muted-foreground">
-          {hovered !== null ? "hover" : "step"} {(cursor + 1).toLocaleString()}/
-          {trace.calls.length.toLocaleString()}
+          {hovered !== null ? t.execution.hover : t.execution.step}{" "}
+          {t.execution.position(
+            (cursor + 1).toLocaleString(),
+            trace.calls.length.toLocaleString()
+          )}
         </span>
       </div>
 
@@ -517,31 +526,28 @@ export default function ChainExecution({
           </span>
           <span className="text-muted-foreground">{current.type}</span>
           <span className="text-violet-300">→ {short(current.to)}</span>
-          <span className="text-muted-foreground">{current.gas.toLocaleString()} gas</span>
+          <span className="text-muted-foreground">
+            {t.execution.callGas(current.gas.toLocaleString())}
+          </span>
           <span className="ml-auto text-muted-foreground">
-            {gasLabel(gasCursor)} / {gasLabel(trace.gasCalls)} gas
+            {t.execution.gasOfTotal(gasLabel(gasCursor), gasLabel(trace.gasCalls))}
           </span>
           <span className="text-muted-foreground/70">
-            ≈ {((gasCursor / trace.gasCalls) * realMs).toFixed(0)}/{realMs} ms in
+            {t.execution.msInto(((gasCursor / trace.gasCalls) * realMs).toFixed(0), realMs)}
           </span>
         </div>
       )}
 
       {stageTimes && (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Green figures are wall-clock, measured by re-issuing each layer as its own{" "}
-          <code className="font-mono">eth_call</code> with the calldata the trace recorded — the
-          math contracts are pure, so the replay returns byte-identical output. Each figure covers
-          that layer&apos;s own call only (the per-element <span className="font-mono">relu</span>{" "}
-          calls are not re-issued) and includes one RPC round trip, so they do not decompose the{" "}
-          {realMs} ms of the combined call.
+          {t.execution.stageTimesNote(realMs)}
         </p>
       )}
 
       <div className="mt-4 border-t border-border/60 pt-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
-            Weights read from <span className="font-mono">{trace.contracts[0].label}</span> storage
+            {t.execution.weightsFrom(trace.contracts[0].label)}
           </p>
           {!layout && (
             <button
@@ -551,7 +557,7 @@ export default function ChainExecution({
                 try {
                   setLayout(await loadStorageLayout(publicClient, network.contract, tokenId, input))
                 } catch {
-                  setLayoutError("This node does not expose prestateTracer.")
+                  setLayoutError(t.execution.noPrestate)
                 } finally {
                   setLoadingLayout(false)
                 }
@@ -559,7 +565,7 @@ export default function ChainExecution({
               disabled={loadingLayout || !input}
               className="rounded-lg border border-border/60 bg-black/30 px-2.5 py-1 text-xs hover:border-violet-400/60 disabled:opacity-50"
             >
-              {loadingLayout ? "Reading…" : "Show storage read"}
+              {loadingLayout ? t.execution.loadingLayout : t.execution.showStorage}
             </button>
           )}
         </div>
@@ -567,8 +573,7 @@ export default function ChainExecution({
           <StorageGrid slots={layout.slots} />
         ) : (
           <p className="font-mono text-[10px] text-muted-foreground">
-            {layoutError ??
-              "One more traced execution, cached afterwards — the weights are the same for every image, so this is asked once per model."}
+            {layoutError ?? t.execution.storageHint}
           </p>
         )}
       </div>

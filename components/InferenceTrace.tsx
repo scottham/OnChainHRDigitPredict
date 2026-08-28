@@ -3,6 +3,7 @@
 import { ChevronRight, Loader2, Radio } from "lucide-react"
 
 import FeatureMap from "@/components/FeatureMap"
+import { useT } from "@/lib/i18n"
 import type { InferenceTrace, Stage } from "@/lib/trace"
 
 /**
@@ -46,10 +47,11 @@ function Arrow({ op }: { op: string }) {
 
 /** Column of channels for one layer. */
 function Channels({ maps, size }: { maps: number[][][]; size: number }) {
+  const t = useT()
   return (
     <div className="flex flex-col gap-1">
       {maps.map((m, i) => (
-        <FeatureMap key={i} data={m} size={size} title={`channel ${i}`} />
+        <FeatureMap key={i} data={m} size={size} title={t.trace.channel(i)} />
       ))}
     </div>
   )
@@ -100,25 +102,23 @@ export default function InferenceTraceView({
   error: string | null
   activeStage?: Stage["key"] | null
 }) {
+  const t = useT()
+
   return (
     <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-medium">Execution trace</h2>
+        <h2 className="font-medium">{t.trace.title}</h2>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-[11px] text-violet-300">
           <Radio className="h-3 w-3" />
-          measured on-chain
+          {t.trace.badge}
         </span>
       </div>
-      <p className="mb-5 text-xs text-muted-foreground">
-        Every activation below is the actual return value of an on-chain call, read back with{" "}
-        <code className="font-mono">debug_traceCall</code> — the same single call that produced the
-        prediction. Nothing here is recomputed in the browser.
-      </p>
+      <p className="mb-5 text-xs text-muted-foreground">{t.trace.intro()}</p>
 
       {loading && (
         <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Tracing execution…
+          {t.trace.loading}
         </div>
       )}
 
@@ -131,7 +131,7 @@ export default function InferenceTraceView({
       {trace && !loading && (
         <>
           <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-3">
-            <StageColumn label="Input" shape="1×28×28">
+            <StageColumn label={t.trace.input} shape="1×28×28">
               {input && <FeatureMap data={input} size={72} />}
             </StageColumn>
 
@@ -162,20 +162,16 @@ export default function InferenceTraceView({
           </div>
 
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-border/60 pt-3 font-mono text-[11px] text-muted-foreground">
-            <span>{trace.totalCalls.toLocaleString()} external calls</span>
-            <span>{trace.callCounts.relu?.toLocaleString()} × relu()</span>
-            <span>{(trace.traceBytes / 1024 / 1024).toFixed(2)} MB trace</span>
-            <span title="The prediction and this trace come from the same traced call: this is how long that call took, including transferring and parsing the trace JSON.">
-              {trace.elapsedMs} ms
-            </span>
+            <span>{t.trace.externalCalls(trace.totalCalls.toLocaleString())}</span>
+            <span>{t.trace.reluCalls(trace.callCounts.relu?.toLocaleString() ?? "0")}</span>
+            <span>{t.trace.traceSize((trace.traceBytes / 1024 / 1024).toFixed(2))}</span>
+            <span title={t.trace.elapsedTitle}>{t.trace.elapsed(trace.elapsedMs)}</span>
           </div>
         </>
       )}
 
       {!trace && !loading && !error && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          Run a prediction to see the layer-by-layer execution.
-        </p>
+        <p className="py-8 text-center text-sm text-muted-foreground">{t.trace.empty}</p>
       )}
     </section>
   )

@@ -9,8 +9,15 @@ import "./globals.css"
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans" })
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" })
 
+/**
+ * No `title` here on purpose: the page's title has to follow the language
+ * picker, and a title in the metadata export is re-rendered by React on every
+ * commit, so assigning document.title imperatively is silently undone. The
+ * provider renders the <title> element instead -- React hoists it into <head>
+ * and it is part of the prerendered HTML, in the fallback locale, like this
+ * description is.
+ */
 export const metadata: Metadata = {
-  title: "On-Chain Digit Recognition",
   description:
     "A convolutional network whose weights live in an NFT and whose forward pass runs entirely in EVM contracts on Monad testnet.",
 }

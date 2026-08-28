@@ -4,6 +4,7 @@ import { useAccount, useSwitchChain } from "wagmi"
 import { Globe } from "lucide-react"
 
 import { NETWORKS, type Network } from "@/lib/networks"
+import { useT } from "@/lib/i18n"
 
 /**
  * Which network the app reads from.
@@ -20,6 +21,7 @@ export default function NetworkPicker({
   active: Network | undefined
   onChange: (chainId: number) => void
 }) {
+  const t = useT()
   const { isConnected } = useAccount()
   const { switchChain } = useSwitchChain()
 
@@ -28,7 +30,7 @@ export default function NetworkPicker({
   return (
     <label className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-card/50 px-2.5 py-1.5 backdrop-blur">
       <Globe className="h-3.5 w-3.5 shrink-0 text-violet-400" />
-      <span className="sr-only">Network</span>
+      <span className="sr-only">{t.network.label}</span>
       <select
         value={active.chain.id}
         onChange={(e) => {
@@ -41,7 +43,7 @@ export default function NetworkPicker({
         {NETWORKS.map((n) => (
           <option key={n.chain.id} value={n.chain.id} className="bg-background">
             {n.chain.name}
-            {n.isMainnet ? " · mainnet" : ""}
+            {n.isMainnet ? t.network.mainnetSuffix : ""}
           </option>
         ))}
       </select>
