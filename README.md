@@ -38,13 +38,14 @@ and no signature. Minting a model does need one.
 Requires Node ≥ 20.
 
 ```
-cp .env.example .env
 npm install
 npm run dev
 ```
 
-Networks are configured one address per chain, and only chains with an address
-are offered in the picker:
+No `.env` is needed to run against the deployments in this repo: each chain
+falls back to the address in its `deployments.*.json`. Copy `.env.example` to
+`.env` to point at your own instead — one address per chain, and only chains
+with an address are offered in the picker:
 
 ```
 NEXT_PUBLIC_CONTRACT_ADDRESS_143=0xd99b…      # mainnet

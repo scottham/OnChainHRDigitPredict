@@ -281,8 +281,8 @@ export default function ChainExecution({
   onStage,
 }: {
   trace: InferenceTrace | null
-  /** Which deployment the trace came from. */
-  network: Network
+  /** Which deployment the trace came from; undefined when none is configured. */
+  network: Network | undefined
   networkLabel: string
   /** Measured wall-clock time of the inference call itself. */
   latencyMs: number | null
@@ -357,7 +357,8 @@ export default function ChainExecution({
     onStage?.(stage?.key ?? null)
   }, [stage, onStage])
 
-  if (!trace) {
+  // No network means no trace to replay, and nothing here to address.
+  if (!trace || !network) {
     return (
       <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">
         <h2 className="font-medium">Chain execution</h2>

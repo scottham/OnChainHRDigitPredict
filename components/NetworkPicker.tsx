@@ -17,13 +17,13 @@ export default function NetworkPicker({
   active,
   onChange,
 }: {
-  active: Network
+  active: Network | undefined
   onChange: (chainId: number) => void
 }) {
   const { isConnected } = useAccount()
   const { switchChain } = useSwitchChain()
 
-  if (NETWORKS.length < 2) return null
+  if (!active || NETWORKS.length < 2) return null
 
   return (
     <label className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-card/50 px-2.5 py-1.5 backdrop-blur">

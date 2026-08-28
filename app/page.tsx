@@ -20,7 +20,7 @@ import { MNIST_NFT_ABI } from "@/lib/abi"
 import {
   DEFAULT_CHAIN_ID,
   DEFAULT_TOKEN_ID,
-  NETWORKS,
+  activeNetwork,
   chainName,
   explorerAddress,
   explorerToken,
@@ -52,7 +52,11 @@ export default function Page() {
     }
   }, [])
 
-  const network = networkFor(activeChainId) ?? NETWORKS[0]
+  /**
+   * Undefined when nothing is configured at all. The page still renders in that
+   * state and says so, so every read of it below has to survive it.
+   */
+  const network = activeNetwork(activeChainId)
   const contractAddress = (network?.contract ?? "") as `0x${string}`
   const isConfigured = Boolean(network)
   const publicClient = usePublicClient({ chainId: activeChainId })
@@ -110,7 +114,8 @@ export default function Page() {
    * local anvil would otherwise still read "Monad Testnet". Label from the id
    * the node itself reports.
    */
-  const networkLabel = nodeChainId === null ? network.chain.name : chainName(nodeChainId)
+  const networkLabel =
+    nodeChainId === null ? (network?.chain.name ?? "no network") : chainName(nodeChainId)
 
   /**
    * Confirm the contract still exists before anyone draws.
@@ -271,6 +276,10 @@ export default function Page() {
 
   const handleMint = useCallback(async () => {
     if (!walletClient || !address) return
+    if (!network) {
+      toast.error("No network configured")
+      return
+    }
     if (!modelParams) {
       toast.warning("Upload a parameters file first")
       return
@@ -371,14 +380,16 @@ export default function Page() {
 
         {contractState === "missing" && (
           <Banner tone="danger" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            No contract code at <code className="font-mono">{short(contractAddress)}</code> on {network.chain.name}.
-            The testnet may have been reset again — redeploy and update{" "}
-            <code className="font-mono">NEXT_PUBLIC_contractAddress</code>.
+            No contract code at <code className="font-mono">{short(contractAddress)}</code> on{" "}
+            {network?.chain.name}. The chain may have been reset again — redeploy and update{" "}
+            <code className="font-mono">NEXT_PUBLIC_CONTRACT_ADDRESS_{activeChainId}</code>.
           </Banner>
         )}
         {contractState === "unconfigured" && (
           <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />}>
-            <code className="font-mono">NEXT_PUBLIC_contractAddress</code> is not set.
+            No network is configured. Set{" "}
+            <code className="font-mono">NEXT_PUBLIC_CONTRACT_ADDRESS_&lt;chainId&gt;</code> to a
+            deployed registry — see <code className="font-mono">.env.example</code>.
           </Banner>
         )}
         {onWrongChain && (
@@ -387,7 +398,7 @@ export default function Page() {
               <>
                 This app is reading a local node (chainId {nodeChainId}); your wallet is on chain{" "}
                 {chainId}. A browser wallet cannot write to a local node — run{" "}
-                <code className="font-mono">npm run dev</code> to use {network.chain.name}.
+                <code className="font-mono">npm run dev</code> to use {network?.chain.name}.
               </>
             ) : (
               <>
@@ -530,7 +541,7 @@ export default function Page() {
                   weights.
                 </p>
               )}
-              {isConfigured && (
+              {network && (
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
                   <a
                     href={explorerToken(network, tokenId) ?? "#"}
