@@ -380,7 +380,14 @@ export default function Page() {
           <div className="flex items-center gap-2">
             <LanguagePicker />
             <NetworkPicker active={network} onChange={handleSelectNetwork} />
-            <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+            {/*
+              No chain control here. RainbowKit's switches the wallet only, and
+              it sits next to NetworkPicker looking identical -- two dropdowns
+              side by side showing different networks. NetworkPicker is the one
+              that does both jobs: it sets the chain the app reads and asks a
+              connected wallet to follow.
+            */}
+            <ConnectButton showBalance={false} chainStatus="none" accountStatus="address" />
           </div>
         </header>
 

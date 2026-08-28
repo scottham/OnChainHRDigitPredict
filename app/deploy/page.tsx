@@ -278,7 +278,8 @@ export default function DeployPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <LanguagePicker />
-            <ConnectButton showBalance={false} />
+            {/* The chain buttons below are this page's switcher; see app/page.tsx. */}
+            <ConnectButton showBalance={false} chainStatus="none" />
           </div>
         </header>
 
