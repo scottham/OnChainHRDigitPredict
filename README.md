@@ -150,6 +150,27 @@ the contract reads back.
 
 Measured on the full MNIST test set: float 98.09%, int8 98.13%.
 
+## Deploying from a browser wallet
+
+`/deploy` does the same two transactions as the scripts below — deploy
+`MNISTPacked`, then mint the weights into it — signed by a connected wallet
+instead of by `PRIVATE_KEY`. It exists for the chain where that key has no
+funds. Both transactions declare an explicit gas limit and show what they
+reserve before you press anything, because Monad bills the declared limit rather
+than the gas used; the deployment limit is the estimate itself (creation gas is
+exact) and the mint is padded 15% (it writes ~100 slots, and a first mint into
+empty storage costs more than a re-mint).
+
+The page fetches `public/MNISTPacked.bytecode.txt` and `public/model-params.json`
+rather than bundling them, so regenerate both after recompiling:
+
+```bash
+node scripts/gen-deploy-assets.mjs
+```
+
+Verified end to end on anvil through the same code path: deploy 3,017,373 gas,
+mint 2,926,398, and `inference` on the fresh contract returns the right digit.
+
 ## Workflow
 
 ```bash
@@ -164,6 +185,9 @@ cd model/scripts_for_contracts_and_test && forge build && cd -
 
 # local chain
 anvil --gas-limit 2000000000 --block-base-fee-per-gas 0
+
+# regenerate what /deploy serves to a browser wallet (after every forge build)
+node scripts/gen-deploy-assets.mjs
 
 # what the app runs: one contract, then a model minted into it
 npx tsx scripts/deploy-packed.ts --target anvil

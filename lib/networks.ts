@@ -84,6 +84,41 @@ if (NETWORKS.length === 0) {
  */
 export const FALLBACK_CHAIN: Chain = monad
 
+/**
+ * Chains a wallet may be connected to, whether or not a contract is deployed
+ * on them.
+ *
+ * NETWORKS is what the app can *read* -- a chain with no MNISTPacked is not
+ * offered there. But /deploy exists precisely to put one on a chain that has
+ * none, so wagmi has to know the chain before there is anything on it,
+ * otherwise the wallet connects and no client can be built for it.
+ */
+export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [monad, monadTestnet, anvil]
+
+export function chainFor(chainId: number | undefined): Chain | undefined {
+  return WALLET_CHAINS.find((c) => c.id === chainId)
+}
+
+export function rpcFor(chain: Chain): string {
+  const override = {
+    [monad.id]: process.env.NEXT_PUBLIC_RPC_URL_143,
+    [monadTestnet.id]: process.env.NEXT_PUBLIC_RPC_URL_10143,
+    [anvil.id]: process.env.NEXT_PUBLIC_RPC_URL_31337,
+  }[chain.id]
+  return override || chain.rpcUrls.default.http[0]
+}
+
+/** Explorer links for a chain, with or without a deployment on it. */
+export function explorerAddressOn(chain: Chain | undefined, address: string) {
+  const url = chain?.blockExplorers?.default.url
+  return url ? `${url}/address/${address}` : null
+}
+
+export function explorerTxOn(chain: Chain | undefined, hash: string) {
+  const url = chain?.blockExplorers?.default.url
+  return url ? `${url}/tx/${hash}` : null
+}
+
 export const DEFAULT_CHAIN_ID = Number(
   process.env.NEXT_PUBLIC_DEFAULT_CHAIN_ID || NETWORKS[0]?.chain.id || monad.id
 )

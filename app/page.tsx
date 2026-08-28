@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Image from "next/image"
+import Link from "next/link"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useAccount, useChainId, usePublicClient, useSwitchChain, useWalletClient } from "wagmi"
 import { toast } from "sonner"
@@ -573,6 +574,13 @@ export default function Page() {
               </summary>
 
               <p className="mt-3 text-xs text-muted-foreground">{t.mint.intro()}</p>
+
+              <Link
+                href="/deploy"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs text-violet-300 hover:underline"
+              >
+                {t.mint.deployLink}
+              </Link>
 
               <div className="mt-4 space-y-3">
                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-xs hover:border-violet-500/60 hover:bg-violet-500/5">

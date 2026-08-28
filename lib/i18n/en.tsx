@@ -104,6 +104,63 @@ export const en = {
     connect: "Connect wallet to mint",
     minting: "Minting…",
     submit: "Mint model NFT",
+    deployLink: "No contract on this chain yet? Deploy one and mint into it →",
+  },
+  deploy: {
+    title: "Deploy & mint",
+    subtitle: "Put MNISTPacked on a chain, from your own wallet",
+    back: "Back to the demo",
+    intro: (): ReactNode => (
+      <>
+        Two transactions, sent by your wallet rather than by a key in{" "}
+        <Mono>.env</Mono>: deploy the contract, then upload the weights into it.
+        Both declare an explicit gas limit, because Monad bills the limit rather
+        than the gas used — what each one reserves is shown before you press it.
+        Nothing on this page holds a private key.
+      </>
+    ),
+    assetsMissing:
+      "Could not load the bytecode or the weights. Run `node scripts/gen-deploy-assets.mjs` after `forge build`.",
+    walletTitle: "Where this will land",
+    connectFirst: "Connect a wallet to see the chain, the balance and the cost.",
+    chain: "chain",
+    account: "account",
+    balance: "balance",
+    feeCap: "fee cap",
+    unknownChain:
+      "This chain is not one the app knows. The transactions will still be sent to whatever your wallet is connected to — switch it first if that is not what you meant.",
+    insufficient: (needed: string, have: string) =>
+      `Not enough to deploy: this reserves ${needed} and the account holds ${have}.`,
+    step1Title: "1. Deploy MNISTPacked",
+    step1Body:
+      "One contract, no constructor arguments. It holds the weights and runs the whole forward pass itself.",
+    initCode: "init code",
+    gasLimit: "gas limit",
+    reserves: "reserves",
+    deployButton: "Deploy contract",
+    deployAgain: "Deploy another",
+    step2Title: "2. Mint the weights",
+    step2Body:
+      "Uploads this repo's trained model into the contract above as token #1. Weights go up packed, 32 int8 per 256-bit word.",
+    contractAddress: "contract address (filled in after deploying, or paste one)",
+    weights: "weights",
+    calldata: "packed into",
+    mintButton: "Mint weights NFT",
+    mintAgain: "Mint another",
+    confirmInWallet: "Confirm in wallet…",
+    mining: "Waiting for the chain…",
+    submitted: "Transaction submitted",
+    deployed: "Contract deployed",
+    minted: "Model minted",
+    deployFailed: "Deploy failed",
+    mintFailed: "Mint failed",
+    reverted: "The deployment transaction reverted.",
+    mintedNothing: "The transaction landed but minted nothing — no Transfer event from that address.",
+    badAddress: "That is not a contract address.",
+    noCode: (address: string) => `No contract code at ${address} on this chain.`,
+    doneTitle: "Done",
+    doneBody: (tokenId: string) =>
+      `Token #${tokenId} holds the model. Add these to .env and restart the dev server to point the app at it:`,
   },
   execution: {
     title: "Chain execution",

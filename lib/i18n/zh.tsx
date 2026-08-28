@@ -101,6 +101,60 @@ export const zh: Messages = {
     connect: "连接钱包后铸造",
     minting: "铸造中…",
     submit: "铸造模型 NFT",
+    deployLink: "这条链上还没有合约？去部署一个并铸造进去 →",
+  },
+  deploy: {
+    title: "部署与铸造",
+    subtitle: "用你自己的钱包把 MNISTPacked 放到链上",
+    back: "返回演示页",
+    intro: (): ReactNode => (
+      <>
+        两笔交易，由你的钱包发出，而不是由 <Mono>.env</Mono> 里的私钥发出：
+        先部署合约，再把权重上传进去。两笔都显式声明 gas limit，
+        因为 Monad 是按声明的上限而不是实际用量计费 —— 每个按钮在按下之前就会显示它要预留多少。
+        本页面不持有任何私钥。
+      </>
+    ),
+    assetsMissing:
+      "字节码或权重没能加载。先 `forge build`，再运行 `node scripts/gen-deploy-assets.mjs`。",
+    walletTitle: "这两笔交易会发到哪",
+    connectFirst: "连接钱包后这里会显示链、余额和花费。",
+    chain: "链",
+    account: "账户",
+    balance: "余额",
+    feeCap: "费用上限",
+    unknownChain:
+      "这条链不在本应用已知的列表里。交易仍然会发到你钱包当前连接的链上 —— 如果那不是你想要的，请先切换。",
+    insufficient: (needed, have) => `余额不足以部署：这笔要预留 ${needed}，账户里只有 ${have}。`,
+    step1Title: "1. 部署 MNISTPacked",
+    step1Body: "只有一个合约，没有构造参数。它存放权重，并独自完成整个前向传播。",
+    initCode: "初始化代码",
+    gasLimit: "gas 上限",
+    reserves: "预留",
+    deployButton: "部署合约",
+    deployAgain: "再部署一个",
+    step2Title: "2. 铸造权重",
+    step2Body:
+      "把本仓库训练好的模型作为 token #1 上传到上面那个合约。权重按每个 256 位字 32 个 int8 打包后发送。",
+    contractAddress: "合约地址（部署后自动填入，也可以自己粘贴）",
+    weights: "权重",
+    calldata: "打包为",
+    mintButton: "铸造权重 NFT",
+    mintAgain: "再铸造一个",
+    confirmInWallet: "请在钱包中确认…",
+    mining: "等待链上确认…",
+    submitted: "交易已提交",
+    deployed: "合约已部署",
+    minted: "模型已铸造",
+    deployFailed: "部署失败",
+    mintFailed: "铸造失败",
+    reverted: "部署交易被回滚了。",
+    mintedNothing: "交易上链了，但什么都没铸造 —— 该地址没有发出 Transfer 事件。",
+    badAddress: "这不是一个合约地址。",
+    noCode: (address) => `这条链上 ${address} 处没有合约代码。`,
+    doneTitle: "完成",
+    doneBody: (tokenId) =>
+      `token #${tokenId} 里就是这个模型。把下面两行加进 .env 并重启 dev server，网页就会指向它：`,
   },
   execution: {
     title: "链上执行",
