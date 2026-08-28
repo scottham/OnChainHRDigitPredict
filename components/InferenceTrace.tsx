@@ -4,7 +4,7 @@ import { ChevronRight, Loader2, Radio } from "lucide-react"
 
 import FeatureMap from "@/components/FeatureMap"
 import { useT } from "@/lib/i18n"
-import type { InferenceTrace, Stage } from "@/lib/trace"
+import type { InferenceRun, StageKey } from "@/lib/trace"
 
 /**
  * One stage of the strip. `active` is driven by the execution replay above, so
@@ -91,16 +91,16 @@ function Logits({ logits, prediction }: { logits: number[]; prediction: number }
 
 export default function InferenceTraceView({
   input,
-  trace,
+  run,
   loading,
   error,
   activeStage,
 }: {
   input: number[][] | null
-  trace: InferenceTrace | null
+  run: InferenceRun | null
   loading: boolean
   error: string | null
-  activeStage?: Stage["key"] | null
+  activeStage?: StageKey | null
 }) {
   const t = useT()
 
@@ -128,7 +128,7 @@ export default function InferenceTraceView({
         </div>
       )}
 
-      {trace && !loading && (
+      {run && !loading && (
         <>
           <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-3">
             <StageColumn label={t.trace.input} shape="1×28×28">
@@ -137,40 +137,41 @@ export default function InferenceTraceView({
 
             <Arrow op="conv 3×3" />
             <StageColumn label="conv1 + ReLU" shape="3×28×28" active={activeStage === "conv1"}>
-              <Channels maps={trace.conv1} size={44} />
+              <Channels maps={run.conv1} size={44} />
             </StageColumn>
 
             <Arrow op="maxpool 2" />
             <StageColumn label="pool1" shape="3×14×14" active={activeStage === "pool1"}>
-              <Channels maps={trace.pool1} size={44} />
+              <Channels maps={run.pool1} size={44} />
             </StageColumn>
 
             <Arrow op="conv 3×3" />
             <StageColumn label="conv2 + ReLU" shape="6×14×14" active={activeStage === "conv2"}>
-              <Channels maps={trace.conv2} size={26} />
+              <Channels maps={run.conv2} size={26} />
             </StageColumn>
 
             <Arrow op="maxpool 2" />
             <StageColumn label="pool2" shape="6×7×7" active={activeStage === "pool2"}>
-              <Channels maps={trace.pool2} size={26} />
+              <Channels maps={run.pool2} size={26} />
             </StageColumn>
 
             <Arrow op="flatten → fc" />
-            <StageColumn label="logits" shape="10" active={activeStage === "fc" || activeStage === "flatten" || activeStage === "argmax"}>
-              <Logits logits={trace.logits} prediction={trace.prediction} />
+            <StageColumn label="logits" shape="10" active={activeStage === "flatten" || activeStage === "fc"}>
+              <Logits logits={run.logits} prediction={run.prediction} />
             </StageColumn>
           </div>
 
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-border/60 pt-3 font-mono text-[11px] text-muted-foreground">
-            <span>{t.trace.externalCalls(trace.totalCalls.toLocaleString())}</span>
-            <span>{t.trace.reluCalls(trace.callCounts.relu?.toLocaleString() ?? "0")}</span>
-            <span>{t.trace.traceSize((trace.traceBytes / 1024 / 1024).toFixed(2))}</span>
-            <span title={t.trace.elapsedTitle}>{t.trace.elapsed(trace.elapsedMs)}</span>
+            <span>{t.trace.noExternalCalls}</span>
+            {run.gasTotal !== null && (
+              <span>{t.trace.gasTotal((run.gasTotal / 1e6).toFixed(2) + "M")}</span>
+            )}
+            <span title={t.trace.elapsedTitle}>{t.trace.elapsed(run.elapsedMs)}</span>
           </div>
         </>
       )}
 
-      {!trace && !loading && !error && (
+      {!run && !loading && !error && (
         <p className="py-8 text-center text-sm text-muted-foreground">{t.trace.empty}</p>
       )}
     </section>

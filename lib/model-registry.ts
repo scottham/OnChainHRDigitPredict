@@ -1,6 +1,6 @@
 import { encodeAbiParameters, keccak256, parseAbiParameters, type PublicClient } from "viem"
 
-import { MNIST_NFT_ABI } from "./abi"
+import { MNIST_ABI } from "./abi"
 
 /**
  * The model *is* the token: every id holds a different set of weights, and the
@@ -79,7 +79,7 @@ export async function readTokenModel(
   const len = (i: number) => Number(BigInt(lengths[i] ?? "0x0"))
 
   const owner = await client
-    .readContract({ address: contract, abi: MNIST_NFT_ABI, functionName: "ownerOf", args: [tokenId] })
+    .readContract({ address: contract, abi: MNIST_ABI, functionName: "ownerOf", args: [tokenId] })
     .then((a) => a as `0x${string}`)
     .catch(() => null) // reverts for an id that was never minted
 

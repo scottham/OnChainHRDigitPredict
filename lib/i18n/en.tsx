@@ -110,72 +110,59 @@ export const en = {
     empty: "Run a prediction to replay the call it made on-chain.",
     blockLabel: (network: string, block: string) => `${network} · block #${block}`,
     axisGas: "x = gas consumed (the EVM's clock)",
-    axisIndex: "x = call index (same calls, evenly spaced)",
-    summary: (
-      calls: string,
-      contracts: number,
-      gas: string,
-      atLeast: boolean,
-      blockShare: string
-    ): ReactNode => (
+    summary: (gas: string, blockShare: string): ReactNode => (
       <>
-        One prediction is {calls} external calls across {contracts} contracts, burning{" "}
-        {atLeast ? "at least " : ""}
-        {gas} gas — {blockShare}% of a Monad block. The strips below show{" "}
-        <em>which contract is executing and what it costs</em>. Everything here comes from the one
-        traced call that produced the prediction; the network is not asked to run the inference
-        twice.
+        One prediction is <strong>one call and no external calls at all</strong>, burning {gas} gas
+        — {blockShare}% of a Monad block. There is nothing to trace: MNISTPacked computes every
+        layer inside itself, which is most of why it costs a fifth of what a call-per-layer
+        implementation does. The bar below is therefore a <em>measurement</em>, not a trace: each
+        segment is the difference between two <Mono>eth_estimateGas</Mono> runs of the pipeline cut
+        short at successive layers.
       </>
     ),
-    gasUnknownNote: (): ReactNode => (
-      <>
-        {" "}
-        (This RPC reports the gas <em>supplied</em> as the root call&apos;s <Mono>gasUsed</Mono>, so
-        the total is summed over the external calls instead.)
-      </>
-    ),
+    noEstimate: "This node would not estimate gas, so the per-layer breakdown is unavailable.",
     replayNote: (realMs: number): ReactNode => (
       <>
         The replay runs at real speed — it lasts the {realMs} ms the call actually took, which is
         why it is over almost before you see it. Within that window the play head advances by{" "}
-        <strong>gas, not seconds</strong>: a trace records what each call cost, never when it ran,
-        so gas is the only per-step clock the EVM has. Drag the slider to walk through it by hand.
+        <strong>gas, not seconds</strong>: nothing on chain records when a layer ran, only what it
+        cost, so gas is the only per-step clock the EVM has — and measuring a layer&apos;s wall
+        clock from here is hopeless anyway, since one RPC round trip is longer than the whole
+        prediction. Drag the slider to walk through it by hand.
       </>
     ),
+    stageLabel: {
+      load: "load model",
+      pack: "pack input",
+      conv1: "conv1 + ReLU",
+      pool1: "pool1",
+      conv2: "conv2 + ReLU",
+      pool2: "pool2",
+      flatten: "flatten",
+      fc: "fc",
+    } as Record<string, string>,
     role: {
-      MNISTNFT: "holds the weights, drives the forward pass",
+      MNISTPacked: "holds the weights and runs the whole forward pass",
     },
     card: {
       callsIn: "calls in",
-      selfGas: "self gas",
+      externalCalls: "calls out",
       gas: "gas",
       storageRead: "storage read",
       code: "code",
       words: (n: number) => `${n} words`,
       kilobytes: (kb: string) => `${kb} KB`,
     },
-    seekLabel: "Seek through the call sequence",
+    seekLabel: "Seek through the forward pass",
     pause: "Pause",
     play: "Play",
     replay: (ms: number) => `Replay (${ms} ms)`,
-    timing: "Timing layers…",
-    retime: "Re-time layers",
-    timeLayers: "Time each layer for real",
     hover: "hover",
-    step: "step",
-    position: (current: string, total: string) => `${current}/${total}`,
-    callGas: (gas: string) => `${gas} gas`,
+    step: "stage",
+    position: (current: number, total: number) => `${current}/${total}`,
+    stageGas: (gas: string) => `${gas} gas`,
     gasOfTotal: (used: string, total: string) => `${used} / ${total} gas`,
     msInto: (at: string, total: number) => `≈ ${at}/${total} ms in`,
-    stageTimesNote: (realMs: number): ReactNode => (
-      <>
-        Green figures are wall-clock, measured by re-issuing each layer as its own{" "}
-        <Mono>eth_call</Mono> with the calldata the trace recorded — the math contracts are pure, so
-        the replay returns byte-identical output. Each figure covers that layer&apos;s own call only
-        (the per-element <span className="font-mono">relu</span> calls are not re-issued) and
-        includes one RPC round trip, so they do not decompose the {realMs} ms of the combined call.
-      </>
-    ),
     weightsFrom: (label: string): ReactNode => (
       <>
         Weights read from <span className="font-mono">{label}</span> storage
@@ -194,21 +181,21 @@ export const en = {
     badge: "measured on-chain",
     intro: (): ReactNode => (
       <>
-        Every activation below is the actual return value of an on-chain call, read back with{" "}
-        <Mono>debug_traceCall</Mono> — the same single call that produced the prediction. Nothing
+        Every activation below is the actual return value of an on-chain call.{" "}
+        <Mono>MNISTPacked.activations()</Mono> reruns the forward pass, stops at that layer and
+        unpacks the lanes it holds, so what you see is the contract&apos;s own arithmetic. Nothing
         here is recomputed in the browser.
       </>
     ),
-    loading: "Tracing execution…",
+    loading: "Running the layers…",
     empty: "Run a prediction to see the layer-by-layer execution.",
     input: "Input",
     channel: (index: number) => `channel ${index}`,
-    externalCalls: (n: string) => `${n} external calls`,
-    reluCalls: (n: string) => `${n} × relu()`,
-    traceSize: (mb: string) => `${mb} MB trace`,
+    noExternalCalls: "0 external calls",
+    gasTotal: (gas: string) => `${gas} gas`,
     elapsed: (ms: number) => `${ms} ms`,
     elapsedTitle:
-      "The prediction and this trace come from the same traced call: this is how long that call took, including transferring and parsing the trace JSON.",
+      "How long the prediction call itself took. The activations above were fetched afterwards, in parallel, and are not counted in it.",
   },
   footer: {
     source: "Source on GitHub",

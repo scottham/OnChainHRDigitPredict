@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+
 /**
  * The same forward pass as MNISTNFT, computed on packed lanes.
  *
@@ -23,20 +25,16 @@ pragma solidity ^0.8.28;
  *     run time from the model's own weights, and a model too wide for 128-bit
  *     lanes is rejected rather than silently wrapped.
  */
-contract MNISTPacked {
+contract MNISTPacked is ERC721 {
     // ---------------------------------------------------------------- storage
-    // ERC721 (OpenZeppelin) occupies slots 0-5; these are never read here and
-    // exist only to put the fields below on the slots MNISTNFT put them on.
-    string private _name;
-    string private _symbol;
-    mapping(uint256 => address) private _owners;
-    mapping(address => uint256) private _balances;
-    mapping(uint256 => address) private _tokenApprovals;
-    mapping(address => mapping(address => bool)) private _operatorApprovals;
-
+    // ERC721 (OpenZeppelin 5.x) occupies slots 0-5, the same six MNISTNFT gave
+    // it. Slots 7 and 8 held MNISTNFT's two helper-contract addresses; nothing
+    // is called out here, but they stay reserved so the layout below lands on
+    // MNISTNFT's slots. That is what lets scripts/verify-packed.mjs replay a
+    // model minted into MNISTNFT under this code and compare the two.
     uint256 private _tokenIds;      // slot 6
-    address private _conv2d;        // slot 7
-    address private _fc;            // slot 8
+    address private _unusedConv2d;  // slot 7, reserved
+    address private _unusedFc;      // slot 8, reserved
 
     struct ModelParams {
         uint16 conv1Out;
@@ -62,6 +60,11 @@ contract MNISTPacked {
     uint256 private constant PADDING = 1;
     uint256 private constant POOL = 2;
 
+    /// Stage indices for runTo(); STAGE_FC is the whole forward pass.
+    uint256 private constant STAGE_FC = 7;
+
+    constructor() ERC721("MNIST NFT", "MNIST") {}
+
     // ------------------------------------------------------------ entry point
 
     function inference(uint256 tokenId, int256[][] memory input28x28)
@@ -69,7 +72,7 @@ contract MNISTPacked {
         view
         returns (uint256 predictedLabel)
     {
-        require(_owners[tokenId] != address(0), "Token does not exist.");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist.");
         return _argmax(logits(tokenId, input28x28));
     }
 
@@ -81,7 +84,43 @@ contract MNISTPacked {
     function logits(uint256 tokenId, int256[][] memory input)
         public
         view
-        returns (int256[] memory)
+        returns (int256[] memory scores)
+    {
+        (scores, , , ) = _forward(tokenId, input, STAGE_FC);
+    }
+
+    /**
+     * Run the first `stage` steps of the forward pass and stop.
+     *
+     * There is nothing to see in a trace of this contract: it makes no external
+     * calls, which is most of why it is 5.8x cheaper than MNISTNFT, and a
+     * callTracer therefore reports one frame for the whole prediction. Per-layer
+     * cost is recovered instead by running prefixes of the pipeline and
+     * subtracting: stage 0 is loading the model, so layer n costs
+     * gas(stage n) - gas(stage n-1), with the shared setup falling out of the
+     * subtraction. Eight eth_calls, issued in parallel, cost nothing and take
+     * about as long as one prediction.
+     *
+     *   0 load the model      1 pack the input     2 conv1+ReLU    3 pool1
+     *   4 conv2+ReLU          5 pool2              6 flatten       7 fc
+     *
+     * The checksum is returned so the work cannot be optimised away and so a
+     * caller can tell two stages apart; its value carries no meaning.
+     */
+    function runTo(uint256 tokenId, int256[][] memory input, uint256 stage)
+        public
+        view
+        returns (uint256 checksum)
+    {
+        require(stage <= STAGE_FC, "No such stage.");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist.");
+        ( , checksum, , ) = _forward(tokenId, input, stage);
+    }
+
+    function _forward(uint256 tokenId, int256[][] memory input, uint256 upTo)
+        private
+        view
+        returns (int256[] memory scores, uint256 checksum, Plane memory plane, uint256 lane)
     {
         ModelParams storage mp = _tokenModelParams[tokenId];
 
@@ -103,16 +142,176 @@ contract MNISTPacked {
             [uint256(mp.conv2Out), mp.conv2In, mp.conv2K],
             w1, w2, b1, b2
         );
+        if (upTo == 0) return (scores, w1.length + w2.length + wf.length + laneBits, plane, laneBits);
 
-        // conv1 + ReLU -> pool
         Plane memory p = _pack(input, laneBits);
+        if (upTo == 1) return (scores, _sum(p.data), p, laneBits);
+        // conv1 + ReLU -> pool
         p = _conv(p, w1, mp.conv1Out, mp.conv1In, mp.conv1K, b1, laneBits);
+        if (upTo == 2) return (scores, _sum(p.data), p, laneBits);
         p = _pool(p, laneBits);
+        if (upTo == 3) return (scores, _sum(p.data), p, laneBits);
         // conv2 + ReLU -> pool
         p = _conv(p, w2, mp.conv2Out, mp.conv2In, mp.conv2K, b2, laneBits);
+        if (upTo == 4) return (scores, _sum(p.data), p, laneBits);
         p = _pool(p, laneBits);
+        if (upTo == 5) return (scores, _sum(p.data), p, laneBits);
 
-        return _fullyConnected(_flatten(p, laneBits), wf, bf, mp.fcOut, mp.fcIn);
+        int256[] memory flat = _flatten(p, laneBits);
+        if (upTo == 6) return (scores, _sumSigned(flat), p, laneBits);
+
+        scores = _fullyConnected(flat, wf, bf, mp.fcOut, mp.fcIn);
+        checksum = _sumSigned(scores);
+        plane = p;
+        lane = laneBits;
+    }
+
+    /**
+     * The feature maps after stage `stage`, unpacked to [channel][row][col].
+     *
+     * MNISTNFT's per-layer outputs fell out of its trace for free, because it
+     * made an external call per layer. This contract makes none -- that is most
+     * of why it is cheaper -- so what the network sees has to be asked for, and
+     * the unpacking is done here rather than by the caller because the lane
+     * width is a property of the model and the input, not of the ABI.
+     *
+     * Stages 2-5 are conv1, pool1, conv2, pool2. Not part of a prediction: this
+     * exists so the page can draw the activations.
+     */
+    function activations(uint256 tokenId, int256[][] memory input, uint256 stage)
+        public
+        view
+        returns (int256[][][] memory)
+    {
+        require(stage >= 2 && stage <= 5, "No feature maps at that stage.");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist.");
+        ( , , Plane memory p, uint256 laneBits) = _forward(tokenId, input, stage);
+        return _unpackPlane(p, laneBits);
+    }
+
+    function _unpackPlane(Plane memory p, uint256 laneBits)
+        private
+        pure
+        returns (int256[][][] memory out)
+    {
+        uint256 lanes = 256 / laneBits;
+        uint256 mask = (uint256(1) << laneBits) - 1;
+        out = new int256[][][](p.channels);
+        unchecked {
+            for (uint256 c = 0; c < p.channels; c++) {
+                out[c] = new int256[][](p.height);
+                for (uint256 y = 0; y < p.height; y++) {
+                    int256[] memory row = new int256[](p.width);
+                    uint256 base = (c * p.height + y) * p.wordsPerRow;
+                    for (uint256 x = 0; x < p.width; x++) {
+                        row[x] = int256((p.data[base + x / lanes] >> ((x % lanes) * laneBits)) & mask);
+                    }
+                    out[c][y] = row;
+                }
+            }
+        }
+    }
+
+    /// Wrapping sums, used only to keep a stage's result observable.
+    function _sum(uint256[] memory values) private pure returns (uint256 total) {
+        unchecked {
+            for (uint256 i = 0; i < values.length; i++) total += values[i];
+        }
+    }
+
+    function _sumSigned(int256[] memory values) private pure returns (uint256 total) {
+        unchecked {
+            for (uint256 i = 0; i < values.length; i++) total += uint256(values[i]);
+        }
+    }
+
+    // ------------------------------------------------------------------ mint
+
+    /**
+     * Upload a model. Identical to MNISTNFT.mint, deliberately: the calldata
+     * format, the packing and the checks are the same, so lib/pack.ts mints
+     * into either contract unchanged.
+     *
+     * The client sends the weights already packed -- one 256-bit word per 32
+     * int8, row-major, least-significant byte first. Sent as int256[] instead,
+     * a ~3,150-weight model is ~108 KB of calldata, over MetaMask's request
+     * size limit. Packed it is ~4 KB.
+     *
+     * The int8 range check therefore lives off chain; a caller can only corrupt
+     * the model in the token it is minting for itself. Lengths are checked
+     * here, so a mis-shaped upload cannot be stored.
+     */
+    function _requireWordCount(uint256 words, uint256 weights) private pure {
+        require(words == (weights + WEIGHTS_PER_SLOT - 1) / WEIGHTS_PER_SLOT, "Packed length mismatch.");
+    }
+
+    function _storeConv1(
+        ModelParams storage mp,
+        uint16[3] calldata shape,
+        uint256[] calldata packed,
+        int256[] calldata bias
+    ) private {
+        _requireWordCount(packed.length, uint256(shape[0]) * shape[1] * shape[2] * shape[2]);
+        require(bias.length == shape[0], "Bias length mismatch.");
+        mp.conv1Out = shape[0];
+        mp.conv1In = shape[1];
+        mp.conv1K = shape[2];
+        mp.conv1Packed = packed;
+        mp.conv1Bias = bias;
+    }
+
+    function _storeConv2(
+        ModelParams storage mp,
+        uint16[3] calldata shape,
+        uint256[] calldata packed,
+        int256[] calldata bias
+    ) private {
+        _requireWordCount(packed.length, uint256(shape[0]) * shape[1] * shape[2] * shape[2]);
+        require(bias.length == shape[0], "Bias length mismatch.");
+        mp.conv2Out = shape[0];
+        mp.conv2In = shape[1];
+        mp.conv2K = shape[2];
+        mp.conv2Packed = packed;
+        mp.conv2Bias = bias;
+    }
+
+    function _storeFc(
+        ModelParams storage mp,
+        uint16[2] calldata shape,
+        uint256[] calldata packed,
+        int256[] calldata bias
+    ) private {
+        _requireWordCount(packed.length, uint256(shape[0]) * shape[1]);
+        require(bias.length == shape[0], "Bias length mismatch.");
+        mp.fcOut = shape[0];
+        mp.fcIn = shape[1];
+        mp.fcPacked = packed;
+        mp.fcBias = bias;
+    }
+
+    /// @param conv1Shape [outChannels, inChannels, kernelSize]
+    /// @param fcShape    [outFeatures, inFeatures]
+    function mint(
+        uint16[3] calldata conv1Shape,
+        uint256[] calldata conv1Packed,
+        int256[] calldata conv1Bias,
+        uint16[3] calldata conv2Shape,
+        uint256[] calldata conv2Packed,
+        int256[] calldata conv2Bias,
+        uint16[2] calldata fcShape,
+        uint256[] calldata fcPacked,
+        int256[] calldata fcBias
+    ) external returns (uint256) {
+        uint256 newTokenId = _tokenIds + 1;
+        _safeMint(msg.sender, newTokenId);
+        _tokenIds = newTokenId;
+
+        ModelParams storage mp = _tokenModelParams[newTokenId];
+        _storeConv1(mp, conv1Shape, conv1Packed, conv1Bias);
+        _storeConv2(mp, conv2Shape, conv2Packed, conv2Bias);
+        _storeFc(mp, fcShape, fcPacked, fcBias);
+
+        return newTokenId;
     }
 
     // ----------------------------------------------------------------- planes

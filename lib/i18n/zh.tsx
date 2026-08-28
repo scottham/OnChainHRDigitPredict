@@ -107,62 +107,56 @@ export const zh: Messages = {
     empty: "先跑一次预测，这里会回放它在链上发出的那次调用。",
     blockLabel: (network, block) => `${network} · 区块 #${block}`,
     axisGas: "x = 已消耗的 gas（EVM 的时钟）",
-    axisIndex: "x = 调用序号（同一批调用，等距排列）",
-    summary: (calls, contracts, gas, atLeast, blockShare): ReactNode => (
+    summary: (gas, blockShare): ReactNode => (
       <>
-        一次预测是横跨 {contracts} 个合约的 {calls} 次外部调用，烧掉{atLeast ? "至少 " : ""}
-        {gas} gas —— 相当于一个 Monad 区块的 {blockShare}%。下面两条带子展示的是
-        <em>哪个合约正在执行、以及它的开销</em>。这里的一切都来自产生该预测的那一次被追踪的调用；
-        网络并没有被要求把推理跑两遍。
+        一次预测是<strong>一次调用，且不发出任何外部调用</strong>，烧掉 {gas} gas —— 相当于一个
+        Monad 区块的 {blockShare}%。这里没有 trace 可看：MNISTPacked 把每一层都在自己内部算完，
+        这也正是它只需要「每层一次跨合约调用」那种实现五分之一开销的主要原因。所以下面这条带子是
+        <em>实测</em>而不是 trace：每一段都是把流水线截断在相邻两层、各做一次{" "}
+        <Mono>eth_estimateGas</Mono> 之后的差值。
       </>
     ),
-    gasUnknownNote: (): ReactNode => (
-      <>
-        {" "}
-        （这个 RPC 把<em>提供</em>的 gas 当作根调用的 <Mono>gasUsed</Mono> 上报，
-        因此总量改为对各次外部调用求和得出。）
-      </>
-    ),
+    noEstimate: "该节点不提供 gas 估算，因此无法给出逐层开销。",
     replayNote: (realMs): ReactNode => (
       <>
         回放按真实速度进行 —— 它持续的正是这次调用实际花掉的 {realMs} 毫秒，所以几乎还没看清就结束了。
-        在这段时间里，播放头是按 <strong>gas 而不是秒</strong> 推进的：trace 只记录每次调用花了多少，
-        从不记录它何时发生，gas 是 EVM 唯一的逐步时钟。拖动滑块可以手动逐步查看。
+        在这段时间里，播放头是按 <strong>gas 而不是秒</strong> 推进的：链上不记录某一层何时执行，
+        只记录它花了多少，gas 是 EVM 唯一的逐步时钟 —— 而且从这里也量不出某一层的墙钟时间，
+        一次 RPC 往返就比整次预测还长。拖动滑块可以手动逐步查看。
       </>
     ),
+    stageLabel: {
+      load: "读取模型",
+      pack: "打包输入",
+      conv1: "conv1 + ReLU",
+      pool1: "pool1",
+      conv2: "conv2 + ReLU",
+      pool2: "pool2",
+      flatten: "flatten",
+      fc: "fc",
+    },
     role: {
-      MNISTNFT: "存放权重，驱动前向传播",
+      MNISTPacked: "存放权重，并独自完成整个前向传播",
     },
     card: {
       callsIn: "收到调用",
-      selfGas: "自身 gas",
+      externalCalls: "发出调用",
       gas: "gas",
       storageRead: "读取存储",
       code: "代码",
       words: (n) => `${n} 个字`,
       kilobytes: (kb) => `${kb} KB`,
     },
-    seekLabel: "在调用序列中拖动定位",
+    seekLabel: "在前向传播中拖动定位",
     pause: "暂停",
     play: "播放",
     replay: (ms) => `重放（${ms} 毫秒）`,
-    timing: "正在计时各层…",
-    retime: "重新计时各层",
-    timeLayers: "实测每一层耗时",
     hover: "悬停",
-    step: "步进",
+    step: "阶段",
     position: (current, total) => `${current}/${total}`,
-    callGas: (gas) => `${gas} gas`,
+    stageGas: (gas) => `${gas} gas`,
     gasOfTotal: (used, total) => `${used} / ${total} gas`,
     msInto: (at, total) => `≈ 已进行 ${at}/${total} 毫秒`,
-    stageTimesNote: (realMs): ReactNode => (
-      <>
-        绿色数字是实测墙钟时间：用 trace 记录下来的 calldata 把每一层作为独立的{" "}
-        <Mono>eth_call</Mono> 重新发一遍测得 —— 数学合约是纯函数，所以重放返回逐字节相同的输出。
-        每个数字只覆盖该层自身的那次调用（逐元素的 <span className="font-mono">relu</span>{" "}
-        调用不会被重发），并且包含一次 RPC 往返，因此它们并不能把合并调用的 {realMs} 毫秒拆解开。
-      </>
-    ),
     weightsFrom: (label): ReactNode => (
       <>
         权重读自 <span className="font-mono">{label}</span> 的存储
@@ -177,24 +171,24 @@ export const zh: Messages = {
     slotDetail: (index, head, tail) => `slot ${index}：${head}…${tail}`,
   },
   trace: {
-    title: "执行追踪",
+    title: "执行轨迹",
     badge: "链上实测",
     intro: (): ReactNode => (
       <>
-        下面每一个激活值都是链上调用的真实返回值，通过 <Mono>debug_traceCall</Mono> 读回 ——
-        正是产生该预测的那一次调用。这里没有任何东西是在浏览器里重算的。
+        下面每一张激活图都是链上调用的真实返回值。<Mono>MNISTPacked.activations()</Mono>{" "}
+        会把前向传播重跑一遍、停在那一层，并把该层打包在字内的 lane 解开，
+        所以你看到的就是合约自己算出来的东西。这里没有任何一步是在浏览器里重算的。
       </>
     ),
-    loading: "正在追踪执行…",
-    empty: "先跑一次预测，这里会逐层展示执行过程。",
+    loading: "正在逐层执行…",
+    empty: "先跑一次预测，这里会显示逐层的执行过程。",
     input: "输入",
     channel: (index) => `通道 ${index}`,
-    externalCalls: (n) => `${n} 次外部调用`,
-    reluCalls: (n) => `${n} × relu()`,
-    traceSize: (mb) => `${mb} MB trace`,
+    noExternalCalls: "0 次外部调用",
+    gasTotal: (gas) => `${gas} gas`,
     elapsed: (ms) => `${ms} 毫秒`,
     elapsedTitle:
-      "预测和这份 trace 来自同一次被追踪的调用：这是那次调用花掉的时间，包含传输和解析 trace JSON 的开销。",
+      "这是预测调用本身花掉的时间。上面的激活图是之后并行取回的，不计入其中。",
   },
   footer: {
     source: "在 GitHub 上查看源码",

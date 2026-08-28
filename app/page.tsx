@@ -11,12 +11,12 @@ import CanvasBoard, { type CanvasBoardHandle } from "@/components/CanvasBoard"
 import DigitPreview from "@/components/DigitPreview"
 import InferenceTraceView from "@/components/InferenceTrace"
 import ChainExecution from "@/components/ChainExecution"
-import { traceInference, type InferenceTrace, type Stage } from "@/lib/trace"
+import { runInference, type InferenceRun, type StageKey } from "@/lib/trace"
 import { toMintArgs } from "@/lib/pack"
 import { mintGate } from "@/lib/chain-gate"
 import { describeArchitecture, readTokenCount, readTokenModel, type TokenModel } from "@/lib/model-registry"
 import { Button } from "@/components/ui/button"
-import { MNIST_NFT_ABI } from "@/lib/abi"
+import { MNIST_ABI } from "@/lib/abi"
 import {
   DEFAULT_CHAIN_ID,
   DEFAULT_TOKEN_ID,
@@ -80,12 +80,12 @@ export default function Page() {
   const [tokenCount, setTokenCount] = useState<number | null>(null)
   const [tokenModel, setTokenModel] = useState<TokenModel | null>(null)
 
-  const [trace, setTrace] = useState<InferenceTrace | null>(null)
+  const [run, setRun] = useState<InferenceRun | null>(null)
   const [tracing, setTracing] = useState(false)
   const [traceError, setTraceError] = useState<string | null>(null)
   const [tracedInput, setTracedInput] = useState<number[][] | null>(null)
   /** Which layer the execution replay is currently inside. */
-  const [activeStage, setActiveStage] = useState<Stage["key"] | null>(null)
+  const [activeStage, setActiveStage] = useState<StageKey | null>(null)
 
   const [modelFile, setModelFile] = useState<string | null>(null)
   const [modelParams, setModelParams] = useState<any>(null)
@@ -188,7 +188,7 @@ export default function Page() {
     setTokenId(DEFAULT_TOKEN_ID.toString())
     setPrediction(null)
     setLatency(null)
-    setTrace(null)
+    setRun(null)
     setTraceError(null)
     setTracedInput(null)
   }, [])
@@ -198,7 +198,7 @@ export default function Page() {
     setTokenId(next)
     setPrediction(null)
     setLatency(null)
-    setTrace(null)
+    setRun(null)
     setTraceError(null)
     setTracedInput(null)
   }, [])
@@ -207,7 +207,7 @@ export default function Page() {
     canvasRef.current?.clearCanvas()
     setPrediction(null)
     setLatency(null)
-    setTrace(null)
+    setRun(null)
     setTraceError(null)
     setTracedInput(null)
   }, [])
@@ -228,18 +228,14 @@ export default function Page() {
     setTracedInput(grid)
     try {
       /**
-       * One traced call, not two.
-       *
-       * debug_traceCall returns the root call's own output, which is the
-       * prediction, alongside every child call. Asking for the answer with
-       * readContract and then tracing it would make the node run the same ~50M
-       * gas of work twice for a single click.
+       * The prediction first and alone, then everything the page draws around
+       * it -- see lib/trace.ts. The latency shown is the prediction's own, not
+       * the whole batch's.
        */
-      const started = performance.now()
-      const result = await traceInference(publicClient, contractAddress, BigInt(tokenId), grid)
-      setLatency(Math.round(performance.now() - started))
+      const result = await runInference(publicClient, contractAddress, BigInt(tokenId), grid)
+      setLatency(result.elapsedMs)
       setPrediction(result.prediction)
-      setTrace(result)
+      setRun(result)
     } catch (err: any) {
       const detail: string = err?.shortMessage || err?.message || t.toast.unknownError
       if (/Token does not exist/.test(detail)) {
@@ -251,16 +247,16 @@ export default function Page() {
         return
       }
 
-      // An RPC without the debug namespace can still answer the question; it
-      // just cannot show the work. Fall back to a plain call rather than
-      // failing the prediction.
-      setTrace(null)
+      // An RPC that will not estimate gas or unpack activations can still
+      // answer the question; it just cannot show the work. Fall back to a plain
+      // call rather than failing the prediction.
+      setRun(null)
       setTraceError(t.toast.traceFailed(detail.split("\n")[0]))
       try {
         const started = performance.now()
         const result = (await publicClient.readContract({
           address: contractAddress,
-          abi: MNIST_NFT_ABI,
+          abi: MNIST_ABI,
           functionName: "inference",
           args: [BigInt(tokenId), grid.map((row) => row.map((v) => BigInt(v)))],
         })) as bigint
@@ -323,7 +319,7 @@ export default function Page() {
        */
       const hash = await walletClient.writeContract({
         address: contractAddress,
-        abi: MNIST_NFT_ABI,
+        abi: MNIST_ABI,
         functionName: "mint",
         args: toMintArgs(modelParams),
         chain: network.chain,
@@ -622,7 +618,7 @@ export default function Page() {
 
         <div className="mt-6 space-y-6">
           <ChainExecution
-            trace={trace}
+            run={run}
             network={network}
             networkLabel={networkLabel}
             latencyMs={latency}
@@ -632,7 +628,7 @@ export default function Page() {
           />
           <InferenceTraceView
             input={tracedInput}
-            trace={trace}
+            run={run}
             loading={tracing}
             error={traceError}
             activeStage={activeStage}

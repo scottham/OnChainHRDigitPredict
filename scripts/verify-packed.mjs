@@ -31,27 +31,43 @@ import {
 } from "viem"
 
 const require = createRequire(import.meta.url)
-let solc
-try {
-  solc = require("solc")
-} catch {
-  console.error("This script needs the Solidity compiler: npm i -D solc@0.8.28")
-  process.exit(1)
-}
 
 const M = process.argv[2] || process.env.NEXT_PUBLIC_RPC_URL_143 || "https://rpc.monad.xyz"
 const DEPLOYED = (process.argv[3] || process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_143 ||
   JSON.parse(fs.readFileSync("deployments.monad.json", "utf8")).contracts.MNISTNFT).toLowerCase()
-/** Any address with no code on the chain; the override puts the new contract there. */
-const PACKED = "0x0000000000000000000000000000000000009ac6"
+/**
+ * Where MNISTPacked runs. Given a deployed address (argv[4]), the chain already
+ * holds the code and the override carries only the model's storage -- which
+ * checks what is actually deployed rather than what recompiles here. Otherwise
+ * the code is overridden onto an address with none, and nothing is deployed.
+ */
+const DEPLOYED_PACKED = (process.argv[4] || process.env.PACKED_ADDRESS || "").toLowerCase()
+const PACKED = DEPLOYED_PACKED || "0x0000000000000000000000000000000000009ac6"
 const SRC = path.join("model", "scripts_for_contracts_and_test", "contracts", "MNISTPacked.sol")
+const ARTIFACT = path.join("model", "scripts_for_contracts_and_test", "out", "MNISTPacked.sol", "MNISTPacked.json")
 
-const out = JSON.parse(solc.compile(JSON.stringify({ language: "Solidity",
-  sources: { "M.sol": { content: fs.readFileSync(SRC, "utf8") } },
-  settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true,
-    outputSelection: { "*": { "*": ["abi", "evm.deployedBytecode.object"] } } } })))
-for (const e of out.errors ?? []) if (e.severity === "error") { console.error(e.formattedMessage); process.exit(1) }
-const { abi, evm } = out.contracts["M.sol"].MNISTPacked
+/** forge build writes the same settings foundry.toml pins; solc is the fallback. */
+function compiled() {
+  if (fs.existsSync(ARTIFACT)) {
+    const a = JSON.parse(fs.readFileSync(ARTIFACT, "utf8"))
+    return { abi: a.abi, code: a.deployedBytecode.object.replace(/^0x/, "") }
+  }
+  let solc
+  try {
+    solc = require("solc")
+  } catch {
+    console.error("No forge artifact; this script then needs the Solidity compiler: npm i -D solc@0.8.28")
+    process.exit(1)
+  }
+  const out = JSON.parse(solc.compile(JSON.stringify({ language: "Solidity",
+    sources: { "M.sol": { content: fs.readFileSync(SRC, "utf8") } },
+    settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true,
+      outputSelection: { "*": { "*": ["abi", "evm.deployedBytecode.object"] } } } })))
+  for (const e of out.errors ?? []) if (e.severity === "error") { console.error(e.formattedMessage); process.exit(1) }
+  const c = out.contracts["M.sol"].MNISTPacked
+  return { abi: c.abi, code: c.evm.deployedBytecode.object }
+}
+const { abi, code } = compiled()
 const rpc = async (m, p) => (await (await fetch(M, { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) })).json())
 const INF = [{ name: "inference", type: "function", stateMutability: "view",
@@ -62,8 +78,12 @@ const pre = await rpc("debug_traceCall", [{ to: DEPLOYED,
   data: encodeFunctionData({ abi: INF, functionName: "inference", args: [1n, seed] }), gas: "0x5f5e100" },
   "latest", { tracer: "prestateTracer" }])
 const registry = pre.result[DEPLOYED] ?? pre.result[DEPLOYED.toLowerCase()]
-const OV = { [PACKED]: { code: "0x" + evm.deployedBytecode.object, stateDiff: registry.storage } }
-console.log(`MNISTPacked compiled: ${evm.deployedBytecode.object.length / 2} bytes`)
+const OV = { [PACKED]: DEPLOYED_PACKED
+  ? { stateDiff: registry.storage }
+  : { code: "0x" + code, stateDiff: registry.storage } }
+console.log(DEPLOYED_PACKED
+  ? `MNISTPacked deployed at ${PACKED}: ${(await rpc("eth_getCode", [PACKED, "latest"])).result.length / 2 - 1} bytes on chain`
+  : `MNISTPacked compiled: ${code.length / 2} bytes (not deployed; overridden onto ${PACKED})`)
 console.log(`replaying ${Object.keys(registry.storage).length} storage slots of ${DEPLOYED} under it\n`)
 
 // ---- independent reference, read from the same storage

@@ -41,10 +41,16 @@ const isAddress = (v: string | undefined): v is `0x${string}` => /^0x[0-9a-fA-F]
  * never configured: a checkout with no .env, or a host whose variables still
  * carry the old NEXT_PUBLIC_MONADTESTNET_* names, gets the live contracts
  * instead of an empty chain list. An env var for the same chain wins.
+ *
+ * MNISTPacked only. The app speaks its ABI -- activations(), runTo() -- which
+ * MNISTNFT does not have, so a chain where only the old contract is deployed
+ * is left off the list rather than offered and then failing on the first
+ * prediction. Deploy and mint there, and it appears.
  */
-const DEPLOYED: Record<number, string> = {
-  [monadDeployment.chainId]: monadDeployment.contracts.MNISTNFT,
-  [monadTestnetDeployment.chainId]: monadTestnetDeployment.contracts.MNISTNFT,
+const DEPLOYED: Record<number, string | undefined> = {
+  [monadDeployment.chainId]: (monadDeployment.contracts as Record<string, string>).MNISTPacked,
+  [monadTestnetDeployment.chainId]: (monadTestnetDeployment.contracts as Record<string, string>)
+    .MNISTPacked,
 }
 
 function build(chain: Chain, contract: string | undefined, rpc: string | undefined, isMainnet = false) {

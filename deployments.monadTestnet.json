@@ -6,7 +6,11 @@
   "contracts": {
     "Convolution2D": "0x00a8d614722c5f7325d00e689ec3eb71046c424f",
     "FullyConnectedLayer": "0xaa8a00158b72f28a324634265dbb060e67b1259d",
-    "MNISTNFT": "0x4420fe892e106939aed7165dbca4a5caa65e8647"
+    "MNISTNFT": "0x4420fe892e106939aed7165dbca4a5caa65e8647",
+    "MNISTPacked": "0xbb66cc0e2b8de0c8f1542cfec1388fd79106efbf"
   },
-  "tokenId": "1"
+  "tokenId": "1",
+  "tokenIds": {
+    "MNISTPacked": "1"
+  }
 }
