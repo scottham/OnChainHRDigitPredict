@@ -6,7 +6,12 @@
   "contracts": {
     "Convolution2D": "0x00a8d614722c5f7325d00e689ec3eb71046c424f",
     "FullyConnectedLayer": "0xaa8a00158b72f28a324634265dbb060e67b1259d",
-    "MNISTNFT": "0xd99bdd2d972aaf4d1dd2fb360e14b00d592c3a0a"
+    "MNISTNFT": "0xd99bdd2d972aaf4d1dd2fb360e14b00d592c3a0a",
+    "MNISTPacked": "0x83e765e0b243929c561f9e797fbc0416bcf7044d"
   },
-  "tokenId": "1"
+  "tokenId": "1",
+  "tokenIds": {
+    "MNISTPacked": "1"
+  },
+  "notes": "MNISTPacked was deployed and minted from a browser wallet via /deploy by 0x0061e7958aA1f6bbDA7fFdB4D079fa2d413263dd, which also owns its token 1 -- not the `deployer` above, which deployed the earlier three-contract implementation. That one is still on chain and is no longer read by the app."
 }

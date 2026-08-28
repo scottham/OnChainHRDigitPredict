@@ -32,6 +32,11 @@ export const zh: Messages = {
     label: "网络",
     mainnetSuffix: " · 主网",
   },
+  picker: {
+    label: "网络",
+    none: "无可用网络",
+    undeployed: "未部署",
+  },
   banner: {
     missingContract: (address, network, envVar): ReactNode => (
       <>
@@ -51,8 +56,7 @@ export const zh: Messages = {
         浏览器钱包无法向本地节点写入 —— 运行 <Mono>npm run dev</Mono> 以使用 {network}。
       </>
     ),
-    wrongChain: (walletChainId, reading) =>
-      `钱包在链 ${walletChainId} 上，而本应用正在读取 ${reading}。`,
+    wrongChain: (wallet, reading) => `钱包在 ${wallet} 上，而本应用正在读取 ${reading}。`,
     switchTo: (network) => `切换到 ${network}`,
   },
   canvas: {
@@ -118,6 +122,9 @@ export const zh: Messages = {
     assetsMissing:
       "字节码或权重没能加载。先 `forge build`，再运行 `node scripts/gen-deploy-assets.mjs`。",
     walletTitle: "这两笔交易会发到哪",
+    mainnetTag: "主网",
+    mainnetWarning:
+      "这是主网。两笔交易都花真实的 MON，而且 Monad 按上面显示的 gas 上限计费，不是按实际用量。",
     connectFirst: "连接钱包后这里会显示链、余额和花费。",
     chain: "链",
     account: "账户",
@@ -258,8 +265,7 @@ export const zh: Messages = {
     chainUnknownTitle: "仍在确认该 RPC 服务的是哪条链",
     chainUnknownBody: "请稍候再试。",
     wrongNetworkTitle: "网络不对",
-    wrongNetworkBody: (walletChainId, readingChainId) =>
-      `你的钱包在链 ${walletChainId} 上，而本应用正在读取链 ${readingChainId}。`,
+    wrongNetworkBody: (wallet, reading) => `你的钱包在 ${wallet} 上，而本应用正在读取 ${reading}。`,
     noContractOnWalletChain: (address) => `在你钱包所连的链上，${address} 处没有合约。`,
     mintSubmitted: "铸造交易已提交",
     mintedNothing: "交易上链了，但什么也没铸造出来 —— 合约没有发出 Transfer 事件。",

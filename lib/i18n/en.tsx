@@ -34,6 +34,11 @@ export const en = {
     label: "Network",
     mainnetSuffix: " · mainnet",
   },
+  picker: {
+    label: "Network",
+    none: "no network",
+    undeployed: "not deployed",
+  },
   banner: {
     missingContract: (address: string, network: string, envVar: string): ReactNode => (
       <>
@@ -54,8 +59,8 @@ export const en = {
         <Mono>npm run dev</Mono> to use {network}.
       </>
     ),
-    wrongChain: (walletChainId: number, reading: string) =>
-      `Wallet is on chain ${walletChainId}; this app is reading ${reading}.`,
+    wrongChain: (wallet: string, reading: string) =>
+      `Wallet is on ${wallet}; this app is reading ${reading}.`,
     switchTo: (network: string) => `Switch to ${network}`,
   },
   canvas: {
@@ -122,6 +127,9 @@ export const en = {
     assetsMissing:
       "Could not load the bytecode or the weights. Run `node scripts/gen-deploy-assets.mjs` after `forge build`.",
     walletTitle: "Where this will land",
+    mainnetTag: "mainnet",
+    mainnetWarning:
+      "This is mainnet. Both transactions spend real MON, and Monad charges the gas limit shown, not the gas used.",
     connectFirst: "Connect a wallet to see the chain, the balance and the cost.",
     chain: "chain",
     account: "account",
@@ -268,8 +276,8 @@ export const en = {
     chainUnknownTitle: "Still checking which chain the RPC serves",
     chainUnknownBody: "Try again in a moment.",
     wrongNetworkTitle: "Wrong network",
-    wrongNetworkBody: (walletChainId: number, readingChainId: number | null) =>
-      `Your wallet is on chain ${walletChainId}; this app is reading chain ${readingChainId}.`,
+    wrongNetworkBody: (wallet: string, reading: string) =>
+      `Your wallet is on ${wallet}; this app is reading ${reading}.`,
     noContractOnWalletChain: (address: string) =>
       `No contract at ${address} on the chain your wallet is connected to.`,
     mintSubmitted: "Mint submitted",

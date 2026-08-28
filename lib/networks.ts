@@ -93,7 +93,16 @@ export const FALLBACK_CHAIN: Chain = monad
  * none, so wagmi has to know the chain before there is anything on it,
  * otherwise the wallet connects and no client can be built for it.
  */
-export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [monad, monadTestnet, anvil]
+export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [
+  monad,
+  monadTestnet,
+  // Anvil only when this run was pointed at a local node. It is a development
+  // chain: offering it in a real wallet's network list is noise at best, and an
+  // invitation to switch to a chain that is not running at worst.
+  ...(process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_31337 || process.env.NEXT_PUBLIC_RPC_URL_31337
+    ? [anvil]
+    : []),
+]
 
 export function chainFor(chainId: number | undefined): Chain | undefined {
   return WALLET_CHAINS.find((c) => c.id === chainId)
@@ -139,6 +148,11 @@ export function activeNetwork(chainId: number): Network | undefined {
   return networkFor(chainId) ?? NETWORKS[0]
 }
 
+/** True when this chain is known but has no contract -- /deploy's job. */
+export function isUndeployed(chainId: number): boolean {
+  return !networkFor(chainId) && WALLET_CHAINS.some((c) => c.id === chainId)
+}
+
 /** Token whose weights the demo runs by default. */
 export const DEFAULT_TOKEN_ID = BigInt(process.env.NEXT_PUBLIC_DEFAULT_TOKEN_ID || "1")
 
@@ -153,6 +167,13 @@ export function explorerToken(network: Network, tokenId: bigint | string) {
   return url ? `${url}/nft/${network.contract}/${tokenId}` : null
 }
 
+/**
+ * A chain's name, whether or not anything is deployed on it.
+ *
+ * Reading this out of NETWORKS was wrong the moment a chain could be known but
+ * undeployed: the wallet-mismatch banner then named one side and printed a bare
+ * number for the other.
+ */
 export function chainName(id: number): string {
-  return networkFor(id)?.chain.name ?? (id === 31337 ? "Anvil (local)" : `chainId ${id}`)
+  return WALLET_CHAINS.find((c) => c.id === id)?.name ?? `chainId ${id}`
 }

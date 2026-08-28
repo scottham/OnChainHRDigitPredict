@@ -63,7 +63,18 @@ export default function Page() {
   const network = activeNetwork(activeChainId)
   const contractAddress = (network?.contract ?? "") as `0x${string}`
   const isConfigured = Boolean(network)
-  const publicClient = usePublicClient({ chainId: activeChainId })
+  /**
+   * The chain actually being read, which is not always the one that was picked.
+   *
+   * activeNetwork falls back to the first configured network when the picked
+   * chain has no contract -- a stale NEXT_PUBLIC_DEFAULT_CHAIN_ID is enough to
+   * cause it -- and the RPC client has to follow that fallback rather than the
+   * pick. Reading one chain's address over another chain's RPC is not an error
+   * anywhere: the call just returns nothing, the page says the contract is
+   * missing, and it names the wrong chain while doing it.
+   */
+  const readChainId = network?.chain.id ?? activeChainId
+  const publicClient = usePublicClient({ chainId: readChainId })
   const { data: walletClient } = useWalletClient()
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
@@ -292,7 +303,7 @@ export default function Page() {
     }
     if (!gate.allowed) {
       toast.error(t.toast.wrongNetworkTitle, {
-        description: t.toast.wrongNetworkBody(chainId, expectedChainId),
+        description: t.toast.wrongNetworkBody(chainName(chainId), chainName(expectedChainId!)),
       })
       return
     }
@@ -378,7 +389,7 @@ export default function Page() {
             {t.banner.missingContract(
               short(contractAddress),
               network?.chain.name ?? t.common.noNetwork,
-              `NEXT_PUBLIC_CONTRACT_ADDRESS_${activeChainId}`
+              `NEXT_PUBLIC_CONTRACT_ADDRESS_${readChainId}`
             )}
           </Banner>
         )}
@@ -393,7 +404,7 @@ export default function Page() {
               t.banner.localNode(nodeChainId!, chainId, network?.chain.name ?? t.common.noNetwork)
             ) : (
               <>
-                {t.banner.wrongChain(chainId, networkLabel)}
+                {t.banner.wrongChain(chainName(chainId), networkLabel)}
                 <button
                   onClick={() => switchChain({ chainId: expectedChainId! })}
                   className="ml-2 underline underline-offset-4 hover:no-underline"

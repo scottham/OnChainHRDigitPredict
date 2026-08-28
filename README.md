@@ -10,6 +10,16 @@ The model *is* the token: each id holds a different set of weights, and the app
 runs whichever one you select. The network picker in the header switches which
 chain — and therefore which contract — it reads.
 
+**Monad mainnet** (chainId 143)
+
+| Contract | Address |
+| --- | --- |
+| `MNISTPacked` | `0x83e765e0b243929c561f9e797fbc0416bcf7044d` |
+
+Deployed and minted from a browser wallet through [`/deploy`](#deploying-from-a-browser-wallet).
+Byte-identical to `forge build`'s output. One prediction there is 11.15M gas and
+~310 ms.
+
 **Monad testnet** (chainId 10143)
 
 | Contract | Address |
@@ -21,14 +31,6 @@ One contract, and it makes no external calls: a prediction is a single
 (`MNISTNFT` driving `Convolution2D` and `FullyConnectedLayer`, 3,535 external
 calls and ~58M gas) is still in `contracts/` and still deployed on both chains,
 but the app no longer speaks to it — see [Why one contract](#why-one-contract).
-
-**Monad mainnet** (chainId 143)
-
-Not yet. `MNISTPacked` has to be deployed and a model minted into it there
-(~3.0M + ~2.8M gas, about 0.62 MON at a 100 gwei base fee) before mainnet is
-offered in the picker. The old `MNISTNFT` at
-`0xd99bdd2d972aaf4d1dd2fb360e14b00d592c3a0a` and its two tokens are untouched
-on chain; they are simply not what the app reads any more.
 
 Inference is a `view` call, so the demo needs no wallet, no gas and no
 signature. Minting a model does need one.
@@ -83,8 +85,9 @@ falls back to the address in its `deployments.*.json`. Copy `.env.example` to
 with an address are offered in the picker:
 
 ```
+NEXT_PUBLIC_CONTRACT_ADDRESS_143=0x83e7…      # mainnet
 NEXT_PUBLIC_CONTRACT_ADDRESS_10143=0xbb66…    # testnet
-NEXT_PUBLIC_DEFAULT_CHAIN_ID=10143
+NEXT_PUBLIC_DEFAULT_CHAIN_ID=143
 ```
 
 To add a local chain, deploy to anvil (see Workflow below) and put its address

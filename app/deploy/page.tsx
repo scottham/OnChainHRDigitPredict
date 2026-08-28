@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { useAccount, usePublicClient, useWalletClient } from "wagmi"
+import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi"
 import { formatEther, type Address, type Hex } from "viem"
 import { toast } from "sonner"
 import { ArrowLeft, Loader2, Rocket, Stamp } from "lucide-react"
@@ -14,7 +14,7 @@ import LanguagePicker from "@/components/LanguagePicker"
 import { MNIST_ABI } from "@/lib/abi"
 import { computeFees, padGas } from "@/lib/fees"
 import { useT } from "@/lib/i18n"
-import { chainFor, explorerAddressOn, explorerTxOn } from "@/lib/networks"
+import { WALLET_CHAINS, chainFor, explorerAddressOn, explorerTxOn } from "@/lib/networks"
 import { toMintArgs } from "@/lib/pack"
 
 /**
@@ -49,6 +49,7 @@ export default function DeployPage() {
   const { address, chainId, isConnected } = useAccount()
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient({ chainId })
+  const { switchChain, isPending: switching } = useSwitchChain()
   const chain = chainFor(chainId)
 
   const [bytecode, setBytecode] = useState<Hex | null>(null)
@@ -300,6 +301,33 @@ export default function DeployPage() {
         {/* Where the transactions will land. Named, never guessed. */}
         <section className="mb-6 rounded-2xl border border-border/60 bg-card/50 p-4 backdrop-blur">
           <h2 className="mb-2 text-sm font-medium">{t.deploy.walletTitle}</h2>
+
+          {/*
+            The target is the wallet's own chain, never a separate setting: a
+            page that thinks it is on mainnet while the wallet is on testnet is
+            how a transaction lands where nobody meant it to. These buttons ask
+            the wallet to switch, and the rows below report where it actually is.
+          */}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {WALLET_CHAINS.map((c) => {
+              const active = c.id === chainId
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => switchChain?.({ chainId: c.id })}
+                  disabled={!isConnected || switching || active}
+                  className={`rounded-lg border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed ${
+                    active
+                      ? "border-violet-400/70 bg-violet-500/15 text-violet-200"
+                      : "border-border/60 bg-black/20 text-muted-foreground hover:border-violet-400/60 disabled:opacity-40"
+                  }`}
+                >
+                  {c.name}
+                  {c.id === 143 ? ` · ${t.deploy.mainnetTag}` : ""}
+                </button>
+              )
+            })}
+          </div>
           {!isConnected ? (
             <p className="text-xs text-muted-foreground">{t.deploy.connectFirst}</p>
           ) : (
@@ -316,6 +344,11 @@ export default function DeployPage() {
           {isConnected && !chain && (
             <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200">
               {t.deploy.unknownChain}
+            </p>
+          )}
+          {chainId === 143 && isConnected && (
+            <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200">
+              {t.deploy.mainnetWarning}
             </p>
           )}
           {shortOfFunds && (
