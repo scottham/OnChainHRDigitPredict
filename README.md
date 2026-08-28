@@ -305,8 +305,18 @@ like the obvious problem, were 1.5% of it. See
 
 ## Schematic
 
+What a prediction is at the contract level: one `eth_call` into `MNISTPacked`,
+which reads the token's own packed weights and runs every layer itself. Source:
+[`public/schematic.drawio`](public/schematic.drawio).
+
 ![schematic](public/schematic.png)
 
 ## Net backbone
+
+The network itself, unchanged by any of the above — `MNISTPacked` computes the
+same function as the three-contract implementation, and
+`scripts/verify-packed.mjs` is what holds them to it. ReLU no longer exists as a
+separate step in the code (it is folded into the loop that was already running),
+but it is still what happens.
 
 ![netBackBone](public/backbone.png)
