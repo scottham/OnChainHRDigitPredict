@@ -161,105 +161,189 @@ gas budget is the single most load-bearing thing about running this demo there.
 
 # Part 2 — Can Monad's parallel execution speed up the forward pass?
 
-## No, and the reason is structural
+A convolutional network is one of the most parallel things in computing. The
+question is not whether the parallelism exists — it does, in enormous quantity —
+but whether an EVM contract on Monad can spend any of it.
 
-Monad's parallelism is **optimistic concurrency across the transactions in a
-block**: transactions start before their predecessors finish, their reads and
-writes are watched for conflicts, and conflicting ones are re-executed, with
-state merged in the original order. The unit of parallelism is a transaction.
+## How much parallelism is actually there
 
-A prediction is one call. It executes on one thread, and its layers are strictly
-sequential — conv1 feeds pool1 feeds conv2 — so there is nothing for a
-transaction-level scheduler to overlap. Nothing in Monad's design parallelises
-the inside of a single execution, and this workload is a single execution by
-necessity: at 58.93M gas it is above Monad's own 30M per-transaction cap, so it
-can never even enter a block to be scheduled against anything.
+The network is 3 conv/pool stages and one fully-connected layer:
 
-That last point is worth sitting with. Monad's parallel execution is the part of
-the chain this project can least use, because the project's core operation is
-categorically not a transaction.
-
-## What Monad does give this project
-
-Measured, not inferred:
-
-- **A 150M-gas `eth_call` budget** — exactly the block gas limit, and 2.5× what
-  this call needs. Without it the demo has no home; Arbitrum shows what happens
-  when the ceiling is 50M.
-- **~62 ms execution**, 4-6× faster than the other four. That is interpreter and
-  state-access speed (MonadDb keeps the trie in a purpose-built store and serves
-  reads asynchronously), not parallelism.
-- **Both tracers on the public RPC**, which is what the execution replay is built
-  from.
-
-Concurrency across *separate* predictions does scale, which is what matters for
-serving many users at once — though this is ordinary RPC thread-pooling, present
-on Ethereum too, not Monad's block-level scheduler:
-
-| concurrent calls | Monad throughput | Ethereum throughput |
-| --- | --- | --- |
-| 1 | 9.4 calls/s | 1.6 calls/s |
-| 4 | 8.2 calls/s | 5.2 calls/s |
-| 8 | 14.0 calls/s | 8.8 calls/s |
-
-## Where the 58.93M actually goes
-
-If the goal is a faster prediction, this is the table that matters. Taken from
-one `callTracer` trace of a real prediction:
-
-| what | calls | gas | share |
+| layer | independent outputs | MACs each | MACs |
 | --- | --- | --- | --- |
-| `conv2D` | 2 | 45,570,348 | 77.3% |
-| MNISTNFT's own frame | — | 8,092,898 | 13.7% |
-| `maxPool2D` | 2 | 2,649,197 | 4.5% |
-| `fullyConnected` | 1 | 1,673,810 | 2.8% |
-| `relu` | 3,528 | 748,727 | 1.3% |
-| `flatten3D` | 1 | 190,291 | 0.3% |
-| `argmax` | 1 | 2,706 | 0.0% |
+| conv1 | 3 × 28 × 28 = 2,352 | 9 | 21,168 |
+| conv2 | 6 × 14 × 14 = 1,176 | 27 | 31,752 |
+| fc | 10 | 294 | 2,940 |
+| | | | **55,860** |
 
-Two things stand out.
+Every output within a layer is independent of every other. The critical path is
+only nine stages deep — conv1, relu, pool1, conv2, relu, pool2, flatten, fc,
+argmax — and the widest layer is 2,352-way parallel. Work over depth is in the
+thousands. On a GPU this is a rounding error of a kernel launch.
 
-**`conv2D` is the whole problem.** Two calls, 77% of the gas. Any real speedup
-is a better convolution, not a better chain. The current one works in
-`int[][][] memory` — 256 bits per pixel for values that are int8 weights and
-bounded activations — so most of the gas is memory expansion and word-at-a-time
-copying of data that would fit 32-to-a-word. The mint path already packs weights
-32 int8 per storage word; the compute path unpacks all of it back into full
-words before doing any arithmetic.
+So the parallelism is there. There are exactly three places it could be spent on
+a blockchain, and they behave completely differently.
 
-**`relu`'s 3,528 external calls are a trap for the eye.** They are 99.8% of the
-call count and 1.3% of the gas, at 212 gas each. Inlining `relu` into MNISTNFT
-would remove almost every call in the trace and shrink the trace JSON from
-~2 MB, which would make the *demo* much lighter — but it saves under 1.3% of the
-gas, and would delete the most striking thing the visualisation shows. That is a
-UI decision, not a performance one.
+## 1. Across transactions — this is Monad's parallelism, and it makes things worse
 
-The 13.7% in MNISTNFT's own frame is `_rebuild4D`/`_rebuild2D` unpacking the
-packed weights into memory arrays on *every* prediction, plus the ABI encoding
-of those arrays for each external call. Unlike `relu`, this is real money: the
-weights are identical for every image, and the work is repeated per call.
+To hand work to Monad's block-level scheduler you have to express it as separate
+transactions. Two things kill that, and both are measurable.
 
-## What would actually make it faster
+**The channel between transactions is storage, and storage is ~75× memory.**
+Transactions share nothing but state: whatever one computes for the next must be
+written to storage and read back. Measured on Monad, with the same contract
+writing and reading back N words:
 
-In descending order of payoff, none of which involve the chain:
+| words | in memory | per word | in storage | per word | ratio |
+| --- | --- | --- | --- | --- | --- |
+| 32 | 31,946 | 998 | 929,293 | 29,040 | 29× |
+| 128 | 61,581 | 481 | 3,652,312 | 28,534 | 59× |
+| 294 | 112,843 | 384 | 8,360,926 | 28,439 | 74× |
 
-1. **Keep the activations packed.** Operate on `bytes`/`uint256` words instead of
-   `int[][][]`, unpacking per multiply-accumulate rather than materialising every
-   intermediate as one word per element. This attacks the 77%.
-2. **Stop rebuilding the weights per call** — 13.7% spent re-deriving something
-   that never changes between predictions.
-3. **Collapse the layer boundaries.** Every external call re-encodes the entire
-   activation tensor as calldata and re-decodes it. Fusing conv+relu+pool into
-   one contract call removes two full tensor round trips.
-4. **Inline `relu`** — only if the visualisation is not the point, since it costs
-   the demo more than it saves the chain.
+conv1's output is 2,352 activations. Packed eight to a word that is 294 words:
+**8,360,926 gas just to publish one layer boundary**, and 294 words is the
+optimistic case — as one int256 each, the shape the deployed contract actually
+uses, it is 2,352 words and about **67M gas, more than the entire inference
+costs today**. Four layer boundaries at the packed price is ~33M gas of pure
+handoff, before a single multiply. Transient storage (EIP-1153) does not rescue
+this: it is cleared at the end of each transaction, so it cannot be a channel
+*between* transactions.
 
-If all of that got the call under **30,000,000 gas**, something qualitatively
-new becomes possible: the prediction fits in a Monad transaction. Then it can be
-minted, logged, composed with, and — finally — scheduled in parallel with other
-users' predictions by the block-level scheduler this section opened with. That is
-the only route by which Monad's parallel execution ever helps this project, and
-it runs through the Solidity, not the chain.
+**And the layers are a dependency chain, which is the worst case for optimistic
+concurrency.** Monad starts later transactions before earlier ones finish and
+re-executes any whose reads turn out to be stale. conv2 reads exactly what
+pool1 writes, so a split-by-layer design would have every stage speculatively
+executed, detected as conflicting, and re-executed in order — paying for the
+work twice to arrive at the same serial schedule. Optimistic concurrency pays
+off on *independent* transactions; a nine-deep chain is the case it is worst at.
+
+Splitting by output element instead of by layer avoids the dependency chain
+within a layer, but multiplies the handoff: 21,000 gas of intrinsic cost per
+transaction, and 2,352 transactions for conv1 alone is 49M gas before any
+arithmetic or any storage.
+
+## 2. Inside one transaction, across calls — the EVM forbids it
+
+The natural thought is to let the *node* overlap the independent work inside one
+call. The EVM has no primitive for it. `CALL` is synchronous by definition:
+control transfers, runs to completion, and returns. There is no fork, no async,
+no way to express "these two calls are independent."
+
+Worse, the gas counter is itself a serial dependency. Every opcode's execution
+is conditional on the remaining gas, the 63/64 rule makes the budget available
+to one call a function of exactly how much the previous call consumed, and
+running out mid-way must revert everything after it. An implementation cannot
+speculatively execute two sibling calls concurrently without changing what gas
+metering means. Monad is EVM-equivalent, so this binds it exactly as it binds
+geth.
+
+This is not an oversight — it is the reason the caps in Part 1 exist. EIP-7825's
+stated motivation is that a single transaction able to fill a block *inhibits
+parallel execution*. Ethereum, OP and BNB capped transactions at 2²⁴ gas
+specifically so that blocks contain many small transactions a scheduler can
+spread across cores. This workload is the thing those caps were written to
+prevent.
+
+## 3. Inside a 256-bit word — this one works, and it is worth 8–10×
+
+An EVM word is 256 bits. The activations here are 8-bit inputs and accumulators
+that never exceed about 2¹⁸; the weights are int8. Putting eight activations in
+one word at 32 bits each and multiplying by a broadcast weight does **eight
+multiply-accumulates in one `MUL`** — the same data parallelism a GPU exploits,
+at width 8 instead of thousands.
+
+`contracts/ConvBench.sol` implements both conv layers twice: once in the shape
+the deployed `Convolution2D` uses, once packed. Both read the real weights out
+of the deployed model's storage, and both return a checksum of the post-ReLU
+output, so a faster number cannot be a wrong one. Run with
+`node scripts/bench-conv.mjs`:
+
+| layer | one int256 per activation | 8 packed per word | | |
+| --- | --- | --- | --- | --- |
+| conv1 (1→3, 28×28) | 23,160,416 gas · 1,094/MAC | 2,996,586 gas · 142/MAC | **7.7×** | checksums match |
+| conv2 (3→6, 14×14) | 36,787,180 gas · 1,159/MAC | 3,705,128 gas · 117/MAC | **9.9×** | checksums match |
+
+Two details that constrain how far this goes:
+
+**The EVM has no per-lane signed arithmetic.** A negative lane would borrow from
+its neighbour. The kernel accumulates positive and negative weights into two
+separate non-negative accumulators and subtracts at the end — correct, and it
+costs nothing beyond a second accumulator.
+
+**Lane width shrinks as activations grow.** With 32-bit lanes and this model's
+weights, the largest conv2 input activation is 133,604, leaving 9× headroom
+before a lane could carry into its neighbour — measured, and printed by the
+script. But activations keep growing: by `fc` they reach ~10¹³, which needs
+64-bit lanes and drops the width from 8 to 4. SIMD width is not constant through
+a network; it is set by the widest intermediate.
+
+Even 117 gas per MAC is 15× above the ~8 gas an `ADD` plus a `MUL` costs, so
+this is nowhere near the floor. The remaining overhead is Solidity's memory
+allocation and bounds checks around the arithmetic, most of which assembly would
+remove.
+
+## What it adds up to
+
+Applying the measured ratios to the real breakdown, and treating the rest
+conservatively:
+
+| | today | packed | why |
+| --- | --- | --- | --- |
+| conv2D ×2 | 45.57M | ~5.2M | measured, 7.7–9.9× |
+| MNISTNFT's own frame | 8.09M | ~0.5M | weights are already stored packed; stop unpacking them |
+| maxPool2D ×2 | 2.65M | ~1.3M | per-lane max has no SIMD form; assume only 2× |
+| fullyConnected | 1.67M | ~0.4M | 64-bit lanes, so width 4 not 8 |
+| relu ×3,528 | 0.75M | ~0.3M | a per-lane clamp inside the pipeline, not 3,528 calls |
+| flatten3D, argmax | 0.19M | ~0.05M | |
+| **total** | **58.93M** | **~7.8M** | |
+
+That number is the whole point, because it crosses two thresholds at once. Below
+**30,000,000** the prediction fits in a Monad transaction. Below **16,777,216**
+it fits in a transaction on Ethereum, OP and BNB too. A projection is not a
+measurement, but the two layers carrying 77% of the gas are measured, and the
+margin is large enough that even being 2× pessimistic still clears Monad's cap.
+
+## And *then* Monad's parallelism finally matters
+
+Once a prediction is a transaction, the picture inverts. Inferences from
+different users share nothing: each reads the model's storage and writes only
+its own result. That is precisely the workload optimistic concurrency is best
+at — no conflicts, no re-execution, straight-line speedup across cores.
+
+At ~8M gas per prediction:
+
+| | gas per block | predictions per block | block time | on-chain predictions/s |
+| --- | --- | --- | --- | --- |
+| Monad | 150M | ~18 | 0.4 s | **~45** |
+| Ethereum | 60M | ~7 | 12 s | ~0.6 |
+| BNB Chain | 55M | ~6 | 0.45 s | ~13 |
+| OP Mainnet | 40M | ~5 | 2 s | ~2.5 |
+
+One design caveat that follows directly from how the scheduler works: this only
+holds if the predictions do not touch a shared hot slot. The current `mint`
+increments a single `_tokenIds` counter — every transaction reading and writing
+that one slot conflicts with every other, and Monad's optimistic execution would
+detect it, re-execute, and serialise the whole block. Recording results without
+a shared counter (an address-derived id, or a per-sender nonce) is what turns
+these into the independent transactions the scheduler can actually spread.
+
+## So: can it be parallelised on Monad?
+
+The parallelism in the network is real and enormous, and almost none of it is
+reachable through Monad's parallel execution — because that mechanism operates
+on transactions, and the cost of expressing this network as transactions
+(≈28,400 gas per word of handoff, measured) exceeds by an order of magnitude the
+cost of just doing the work sequentially in memory.
+
+The parallelism that *is* reachable lives inside the 256-bit word, and it is
+worth a measured 8–10×. Spending it is what makes a prediction small enough to
+be a transaction — and only then does the chain's own parallelism become
+available, at roughly 45 on-chain predictions per second on Monad against 0.6 on
+Ethereum.
+
+The order matters and it is counterintuitive: you do not use Monad's parallelism
+to make the network fast. You make the network fast, by hand, in order to earn
+access to Monad's parallelism.
 
 ---
 
@@ -292,3 +376,14 @@ error; Monad accepts 30,000,000 and refuses 30,000,001.
 **Timing.** Median of 5 calls, each with a different input image to defeat
 provider-side `eth_call` caching, minus the median of 8 `eth_chainId` round
 trips to the same endpoint.
+
+**Convolution kernels.** `contracts/ConvBench.sol`, injected by
+`scripts/bench-conv.mjs` the same way — state override, no deployment. It reads
+the real conv1 and conv2 weights out of the deployed model's storage, runs each
+layer both ways, and compares checksums of the post-ReLU output before reporting
+any gas figure. Compiled with `viaIR` because the naive convolution runs out of
+stack slots without it; both implementations are measured under identical
+compiler settings, so the ratio is the finding rather than either absolute.
+
+**Memory against storage.** The same contract's `writeMemory` / `writeStorage`,
+bisected the same way, over the same word counts.
