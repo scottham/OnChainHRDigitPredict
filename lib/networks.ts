@@ -151,11 +151,6 @@ export function activeNetwork(chainId: number): Network | undefined {
   return networkFor(chainId) ?? NETWORKS[0]
 }
 
-/** True when this chain is known but has no contract -- /deploy's job. */
-export function isUndeployed(chainId: number): boolean {
-  return !networkFor(chainId) && WALLET_CHAINS.some((c) => c.id === chainId)
-}
-
 /**
  * The chain the app will actually read, given the one that was picked.
  *
