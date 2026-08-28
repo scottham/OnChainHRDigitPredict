@@ -93,12 +93,15 @@ export const FALLBACK_CHAIN: Chain = monad
  * none, so wagmi has to know the chain before there is anything on it,
  * otherwise the wallet connects and no client can be built for it.
  */
+export const KNOWN_CHAINS: readonly [Chain, ...Chain[]] = [monad, monadTestnet, anvil]
+
 export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [
   monad,
   monadTestnet,
   // Anvil only when this run was pointed at a local node. It is a development
   // chain: offering it in a real wallet's network list is noise at best, and an
-  // invitation to switch to a chain that is not running at worst.
+  // invitation to switch to a chain that is not running at worst. It stays in
+  // KNOWN_CHAINS either way, so a wallet sitting on it is still named.
   ...(process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_31337 || process.env.NEXT_PUBLIC_RPC_URL_31337
     ? [anvil]
     : []),
@@ -153,6 +156,19 @@ export function isUndeployed(chainId: number): boolean {
   return !networkFor(chainId) && WALLET_CHAINS.some((c) => c.id === chainId)
 }
 
+/**
+ * The chain the app will actually read, given the one that was picked.
+ *
+ * This has to be what the RPC client is built for. activeNetwork falls back
+ * when the picked chain has no contract, and a client built for the pick would
+ * then read one chain's contract address over another chain's RPC -- which does
+ * not error anywhere: the call returns empty and the page blames the wrong
+ * chain for it. Covered by test/chain-gate.test.ts.
+ */
+export function readChainId(picked: number): number {
+  return activeNetwork(picked)?.chain.id ?? picked
+}
+
 /** Token whose weights the demo runs by default. */
 export const DEFAULT_TOKEN_ID = BigInt(process.env.NEXT_PUBLIC_DEFAULT_TOKEN_ID || "1")
 
@@ -175,5 +191,5 @@ export function explorerToken(network: Network, tokenId: bigint | string) {
  * number for the other.
  */
 export function chainName(id: number): string {
-  return WALLET_CHAINS.find((c) => c.id === id)?.name ?? `chainId ${id}`
+  return KNOWN_CHAINS.find((c) => c.id === id)?.name ?? `chainId ${id}`
 }

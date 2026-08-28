@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict"
 import { mintGate } from "../lib/chain-gate.js"
+import { NETWORKS, chainName, isUndeployed, readChainId } from "../lib/networks.js"
 
 const cases: [string, Parameters<typeof mintGate>[0], boolean, string][] = [
   ["no wallet", { isConnected: false, walletChainId: undefined, nodeChainId: 10143 }, false, "disconnected"],
@@ -23,4 +24,47 @@ for (const [name, state, allowed, reason] of cases) {
   assert.equal(got.reason, reason, `${name}: expected ${reason}, got ${got.reason}`)
   console.log(`  ok  ${name} -> ${got.reason}`)
 }
-console.log(`\n${cases.length} passed`)
+/**
+ * Which chain the app reads.
+ *
+ * The bug this covers: activeNetwork falls back to the first configured network
+ * when the picked chain has no contract, and the RPC client used to follow the
+ * pick instead of the fallback -- so the app read one chain's contract address
+ * over another chain's RPC. That returns empty rather than erroring, and the
+ * page then reports a missing contract on a chain it never queried.
+ */
+const first = NETWORKS[0]?.chain.id
+const chainCases: [string, () => void][] = [
+  ["reading a configured chain keeps it", () => {
+    if (!first) return
+    assert.equal(readChainId(first), first)
+  }],
+  ["reading an unconfigured chain follows the fallback, not the pick", () => {
+    if (!first) return
+    assert.equal(readChainId(31337), first)
+    assert.notEqual(readChainId(31337), 31337)
+  }],
+  ["a chain nothing knows also follows the fallback", () => {
+    if (!first) return
+    assert.equal(readChainId(999999), first)
+  }],
+  ["undeployed means known but contractless", () => {
+    if (first) assert.equal(isUndeployed(first), false)
+    assert.equal(isUndeployed(999999), false, "unknown chains are not 'undeployed'")
+  }],
+  // chainName once read NETWORKS only, so the wallet-mismatch banner named the
+  // app's chain and printed a bare id for the wallet's.
+  ["every known chain has a name, deployed or not", () => {
+    assert.equal(chainName(143), "Monad")
+    assert.equal(chainName(10143), "Monad Testnet")
+    assert.equal(chainName(31337), "Anvil (local)")
+    assert.equal(chainName(999999), "chainId 999999")
+  }],
+]
+
+for (const [name, run] of chainCases) {
+  run()
+  console.log(`  ok  ${name}`)
+}
+
+console.log(`\n${cases.length + chainCases.length} passed`)

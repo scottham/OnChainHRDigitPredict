@@ -22,6 +22,7 @@ import {
   DEFAULT_CHAIN_ID,
   DEFAULT_TOKEN_ID,
   activeNetwork,
+  readChainId,
   chainName,
   explorerAddress,
   explorerToken,
@@ -73,8 +74,8 @@ export default function Page() {
    * anywhere: the call just returns nothing, the page says the contract is
    * missing, and it names the wrong chain while doing it.
    */
-  const readChainId = network?.chain.id ?? activeChainId
-  const publicClient = usePublicClient({ chainId: readChainId })
+  const readsChainId = readChainId(activeChainId)
+  const publicClient = usePublicClient({ chainId: readsChainId })
   const { data: walletClient } = useWalletClient()
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
@@ -396,7 +397,7 @@ export default function Page() {
             {t.banner.missingContract(
               short(contractAddress),
               network?.chain.name ?? t.common.noNetwork,
-              `NEXT_PUBLIC_CONTRACT_ADDRESS_${readChainId}`
+              `NEXT_PUBLIC_CONTRACT_ADDRESS_${readsChainId}`
             )}
           </Banner>
         )}
