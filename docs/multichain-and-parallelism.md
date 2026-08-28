@@ -327,6 +327,83 @@ detect it, re-execute, and serialise the whole block. Recording results without
 a shared counter (an address-derived id, or a per-sender nonce) is what turns
 these into the independent transactions the scheduler can actually spread.
 
+## It was built, and the projection was 40% optimistic
+
+The table above is a projection. `contracts/MNISTPacked.sol` is the thing
+itself: the same forward pass, computed on packed lanes in one contract, with
+MNISTNFT's storage layout kept slot for slot so an already-minted model is
+readable without re-minting.
+
+**58,927,795 gas → 10,942,975 gas, 5.4x smaller, and under every
+per-transaction cap in Part 1** — including the 16,777,216 that Ethereum, OP
+and BNB share, which the projection only barely reached.
+
+Where the remaining gas goes, bisected stage by stage:
+
+| stage | gas | share |
+| --- | --- | --- |
+| conv2 + ReLU | 3,480,530 | 32% |
+| conv1 + ReLU | 3,272,781 | 31% |
+| pool1 + pool2 | 1,317,899 | 12% |
+| load weights (99 cold SLOADs) | 744,978 | 7% |
+| fullyConnected | 744,979 | 7% |
+| pack the input | 381,183 | 3% |
+| lane-width bound | 317,120 | 3% |
+| ABI-decoding 784 int256 | 296,017 | 3% |
+| flatten, argmax | 117,604 | 1% |
+
+The projection said ~7.8M and the answer is ~10.9M. Two things account for the
+gap, and both are worth knowing.
+
+**Generality costs about 2x.** `ConvBench.sol` reached 142 gas per MAC with the
+lane width, lanes per word and words per row all compile-time constants.
+MNISTPacked chooses the lane width at run time from the model's own weights, so
+every shift and mask is computed rather than folded, and conv1 lands at 155 gas
+per MAC. That is the price of being correct for a model nobody has minted yet
+rather than only for this one.
+
+**The overheads around the convolutions were underestimated.** The projection
+allowed ~0.5M for everything that is not a layer; the real figure is 1.86M —
+loading weights, packing the input, proving the lane width, and decoding 784
+int256 from calldata. None of it is waste exactly, but none of it was counted.
+
+One number did move the other way: `relu` cost 748,727 gas across 3,528 external
+calls and now costs nothing measurable, because a ReLU on packed lanes is a
+comparison inside the loop that was already running.
+
+Two preconditions MNISTNFT does not have, both forced by packing, both in the
+contract's header: input pixels must be non-negative, since a negative lane
+would borrow from its neighbour; and the widest intermediate must fit a lane.
+The second is not assumed — `_laneBits` computes the bound from the model's own
+weights (the largest sum of |weight| over an output channel, times the input's
+peak, layer by layer), picks 32, 64 or 128 bits, and rejects a model that would
+need more rather than wrapping silently. That bound is also what licenses the
+`unchecked` arithmetic in the hot loops: the same fact that keeps lanes
+independent keeps the words from overflowing.
+
+## Verifying it
+
+A faster number is worthless if it is a different number.
+`scripts/verify-packed.mjs` takes the deployed model's own storage with
+`prestateTracer`, replays it under the new code with an `eth_call` state
+override, and checks three things — no deployment, no funds:
+
+- **192 images, 0 mismatches.** Blank, saturated, single-pixel, corners, dense
+  uniform noise, sparse noise, and random thick strokes.
+- **Three ways, not one.** The packed logits against an independent reference
+  implemented in JavaScript, so the two contracts are not merely checked against
+  each other; the packed label against the deployed contract's label end to end;
+  and the packed logits against the deployed contract's *own* logits, lifted out
+  of its `callTracer` trace, which closes the loop directly.
+- **All three lane widths exercised.** MNIST pixels only ever select 32-bit
+  lanes, so the 64- and 128-bit paths would otherwise ship untested. Inputs
+  scaled to 2^20 through 2^52 force them, and MNISTNFT — which works in int256
+  throughout — is the oracle for those too. 32-bit x180, 64-bit x10, 128-bit x2.
+
+What this does not do is deploy anything. The contract is verified against the
+live model on Monad mainnet and costs nothing to check; putting it on-chain,
+and deciding whether the app should point at it, is a separate decision.
+
 ## So: can it be parallelised on Monad?
 
 The parallelism in the network is real and enormous, and almost none of it is
@@ -387,3 +464,10 @@ compiler settings, so the ratio is the finding rather than either absolute.
 
 **Memory against storage.** The same contract's `writeMemory` / `writeStorage`,
 bisected the same way, over the same word counts.
+
+**The packed contract.** `scripts/verify-packed.mjs`, again by state override:
+MNISTPacked keeps MNISTNFT's storage layout, so the deployed model's own slots
+are replayed under the new code and the two are compared directly. Gas is
+bisected, not estimated. Stage costs come from a profiling copy of the contract
+that returns a checksum after each stage, bisected the same way and
+differenced.
