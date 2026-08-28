@@ -6,10 +6,10 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 
-const ARTIFACT = "model/scripts_for_contracts_and_test/out/MNISTNFT.sol/MNISTNFT.json"
+const ARTIFACT = "model/scripts_for_contracts_and_test/out/MNISTPacked.sol/MNISTPacked.json"
 
 // Only what the app actually calls; the full ERC721 surface is noise here.
-const KEEP = new Set(["mint", "inference", "ownerOf", "balanceOf", "name", "symbol"])
+const KEEP = new Set(["mint", "inference", "logits", "runTo", "activations", "ownerOf", "balanceOf", "name", "symbol"])
 
 const full = JSON.parse(readFileSync(ARTIFACT, "utf-8")).abi
 const abi = full.filter(
@@ -20,7 +20,7 @@ writeFileSync(
   "lib/abi.ts",
   "// Generated from forge artifact -- do not edit by hand.\n" +
     "// Regenerate: npx tsx scripts/gen-abi.mjs\n\n" +
-    "export const MNIST_NFT_ABI = " + JSON.stringify(abi, null, 2) + " as const\n"
+    "export const MNIST_ABI = " + JSON.stringify(abi, null, 2) + " as const\n"
 )
 
 console.log(`wrote lib/abi.ts with ${abi.length} entries`)

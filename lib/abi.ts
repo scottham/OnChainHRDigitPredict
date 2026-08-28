@@ -1,7 +1,36 @@
 // Generated from forge artifact -- do not edit by hand.
 // Regenerate: npx tsx scripts/gen-abi.mjs
 
-export const MNIST_NFT_ABI = [
+export const MNIST_ABI = [
+  {
+    "type": "function",
+    "name": "activations",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "input",
+        "type": "int256[][]",
+        "internalType": "int256[][]"
+      },
+      {
+        "name": "stage",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256[][][]",
+        "internalType": "int256[][][]"
+      }
+    ],
+    "stateMutability": "view"
+  },
   {
     "type": "function",
     "name": "balanceOf",
@@ -41,6 +70,30 @@ export const MNIST_NFT_ABI = [
         "name": "predictedLabel",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "logits",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "input",
+        "type": "int256[][]",
+        "internalType": "int256[][]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "scores",
+        "type": "int256[]",
+        "internalType": "int256[]"
       }
     ],
     "stateMutability": "view"
@@ -132,6 +185,35 @@ export const MNIST_NFT_ABI = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "runTo",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "input",
+        "type": "int256[][]",
+        "internalType": "int256[][]"
+      },
+      {
+        "name": "stage",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "checksum",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"

@@ -7,6 +7,7 @@
  *
  * Usage:
  *   npx tsx scripts/mint.ts --target monadTestnet --params model/checkpoints/x.json
+ *   npx tsx scripts/mint.ts --target monadTestnet --params x.json --contract MNISTPacked
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs"
 import { formatEther } from "viem"
@@ -19,6 +20,8 @@ const target = (arg("target") ?? "anvil") as Target
 const paramsPath = arg("params")
 const deploymentPath = arg("deployment") ?? `deployments.${target}.json`
 const gasPad = BigInt(arg("gas-pad") ?? "115")
+/** Both contracts take the same packed calldata, so either can be minted into. */
+const contractName = arg("contract") ?? "MNISTNFT"
 
 if (!paramsPath) throw new Error("--params is required")
 
@@ -26,14 +29,15 @@ const { chain, account, publicClient, walletClient } = makeClients(target)
 
 async function main() {
   const deployment = JSON.parse(readFileSync(deploymentPath, "utf-8"))
-  const address = deployment.contracts.MNISTNFT
-  const { abi } = loadArtifact("MNISTNFT")
+  const address = deployment.contracts[contractName]
+  if (!address) throw new Error(`${deploymentPath} has no ${contractName} address`)
+  const { abi } = loadArtifact(contractName)
   // The same packer the browser uses -- verify.ts is what proves the packed
   // layout matches what the contract reads back.
   const args = toMintArgs(JSON.parse(readFileSync(paramsPath!, "utf-8")))
 
   console.log(`target:   ${chain.name} (chainId ${chain.id})`)
-  console.log(`contract: ${address}`)
+  console.log(`contract: ${contractName} ${address}`)
   console.log(`params:   ${paramsPath}`)
 
   const balance = await publicClient.getBalance({ address: account.address })
@@ -66,7 +70,8 @@ async function main() {
   console.log(`spent:    ${formatEther(balance - after)} ${chain.nativeCurrency.symbol}`)
   console.log(`remaining:${formatEther(after)} ${chain.nativeCurrency.symbol}`)
 
-  deployment.tokenId = tokenId.toString()
+  if (contractName === "MNISTNFT") deployment.tokenId = tokenId.toString()
+  else deployment.tokenIds = { ...(deployment.tokenIds ?? {}), [contractName]: tokenId.toString() }
   writeFileSync(deploymentPath, JSON.stringify(deployment, null, 2) + "\n")
   console.log(`\nnext: npx tsx scripts/verify.ts --target ${target}`)
 }

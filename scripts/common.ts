@@ -3,6 +3,8 @@ import { resolve } from "node:path"
 import { createPublicClient, createWalletClient, http, defineChain, type Abi, type Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 
+export { computeFees, padGas, type Fees } from "../lib/fees.js"
+
 const ROOT = resolve(import.meta.dirname, "..")
 const FORGE_OUT = resolve(ROOT, "model/scripts_for_contracts_and_test/out")
 
@@ -39,27 +41,6 @@ export function arg(name: string): string | undefined {
   return i === -1 ? undefined : process.argv[i + 1]
 }
 
-export type Fees = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
-
-/**
- * Pin fees just above the current base fee.
- *
- * Monad charges `gas_bid * gas_limit` -- the declared limit, not the gas
- * actually used -- so both a fat fee cap and a fat gas limit cost real money.
- * viem's default 1.2x base-fee multiplier would inflate every transaction by
- * 20% for nothing. Monad's base fee has been a flat 100 gwei, so a 5% cushion
- * is ample.
- */
-export async function computeFees(publicClient: {
-  getBlock: (a: { blockTag: "latest" }) => Promise<{ baseFeePerGas: bigint | null }>
-}): Promise<Fees> {
-  const block = await publicClient.getBlock({ blockTag: "latest" })
-  const base = block.baseFeePerGas ?? 0n
-  return {
-    maxFeePerGas: (base * 105n) / 100n + 1_000_000_000n,
-    maxPriorityFeePerGas: 1_000_000_000n,
-  }
-}
 
 export type Artifact = { abi: Abi; bytecode: Hex }
 

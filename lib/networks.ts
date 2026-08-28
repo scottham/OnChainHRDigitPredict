@@ -41,10 +41,16 @@ const isAddress = (v: string | undefined): v is `0x${string}` => /^0x[0-9a-fA-F]
  * never configured: a checkout with no .env, or a host whose variables still
  * carry the old NEXT_PUBLIC_MONADTESTNET_* names, gets the live contracts
  * instead of an empty chain list. An env var for the same chain wins.
+ *
+ * MNISTPacked only. The app speaks its ABI -- activations(), runTo() -- which
+ * MNISTNFT does not have, so a chain where only the old contract is deployed
+ * is left off the list rather than offered and then failing on the first
+ * prediction. Deploy and mint there, and it appears.
  */
-const DEPLOYED: Record<number, string> = {
-  [monadDeployment.chainId]: monadDeployment.contracts.MNISTNFT,
-  [monadTestnetDeployment.chainId]: monadTestnetDeployment.contracts.MNISTNFT,
+const DEPLOYED: Record<number, string | undefined> = {
+  [monadDeployment.chainId]: (monadDeployment.contracts as Record<string, string>).MNISTPacked,
+  [monadTestnetDeployment.chainId]: (monadTestnetDeployment.contracts as Record<string, string>)
+    .MNISTPacked,
 }
 
 function build(chain: Chain, contract: string | undefined, rpc: string | undefined, isMainnet = false) {
@@ -78,6 +84,53 @@ if (NETWORKS.length === 0) {
  */
 export const FALLBACK_CHAIN: Chain = monad
 
+/**
+ * Chains a wallet may be connected to, whether or not a contract is deployed
+ * on them.
+ *
+ * NETWORKS is what the app can *read* -- a chain with no MNISTPacked is not
+ * offered there. But /deploy exists precisely to put one on a chain that has
+ * none, so wagmi has to know the chain before there is anything on it,
+ * otherwise the wallet connects and no client can be built for it.
+ */
+export const KNOWN_CHAINS: readonly [Chain, ...Chain[]] = [monad, monadTestnet, anvil]
+
+export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [
+  monad,
+  monadTestnet,
+  // Anvil only when this run was pointed at a local node. It is a development
+  // chain: offering it in a real wallet's network list is noise at best, and an
+  // invitation to switch to a chain that is not running at worst. It stays in
+  // KNOWN_CHAINS either way, so a wallet sitting on it is still named.
+  ...(process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_31337 || process.env.NEXT_PUBLIC_RPC_URL_31337
+    ? [anvil]
+    : []),
+]
+
+export function chainFor(chainId: number | undefined): Chain | undefined {
+  return WALLET_CHAINS.find((c) => c.id === chainId)
+}
+
+export function rpcFor(chain: Chain): string {
+  const override = {
+    [monad.id]: process.env.NEXT_PUBLIC_RPC_URL_143,
+    [monadTestnet.id]: process.env.NEXT_PUBLIC_RPC_URL_10143,
+    [anvil.id]: process.env.NEXT_PUBLIC_RPC_URL_31337,
+  }[chain.id]
+  return override || chain.rpcUrls.default.http[0]
+}
+
+/** Explorer links for a chain, with or without a deployment on it. */
+export function explorerAddressOn(chain: Chain | undefined, address: string) {
+  const url = chain?.blockExplorers?.default.url
+  return url ? `${url}/address/${address}` : null
+}
+
+export function explorerTxOn(chain: Chain | undefined, hash: string) {
+  const url = chain?.blockExplorers?.default.url
+  return url ? `${url}/tx/${hash}` : null
+}
+
 export const DEFAULT_CHAIN_ID = Number(
   process.env.NEXT_PUBLIC_DEFAULT_CHAIN_ID || NETWORKS[0]?.chain.id || monad.id
 )
@@ -98,6 +151,24 @@ export function activeNetwork(chainId: number): Network | undefined {
   return networkFor(chainId) ?? NETWORKS[0]
 }
 
+/** True when this chain is known but has no contract -- /deploy's job. */
+export function isUndeployed(chainId: number): boolean {
+  return !networkFor(chainId) && WALLET_CHAINS.some((c) => c.id === chainId)
+}
+
+/**
+ * The chain the app will actually read, given the one that was picked.
+ *
+ * This has to be what the RPC client is built for. activeNetwork falls back
+ * when the picked chain has no contract, and a client built for the pick would
+ * then read one chain's contract address over another chain's RPC -- which does
+ * not error anywhere: the call returns empty and the page blames the wrong
+ * chain for it. Covered by test/chain-gate.test.ts.
+ */
+export function readChainId(picked: number): number {
+  return activeNetwork(picked)?.chain.id ?? picked
+}
+
 /** Token whose weights the demo runs by default. */
 export const DEFAULT_TOKEN_ID = BigInt(process.env.NEXT_PUBLIC_DEFAULT_TOKEN_ID || "1")
 
@@ -112,6 +183,13 @@ export function explorerToken(network: Network, tokenId: bigint | string) {
   return url ? `${url}/nft/${network.contract}/${tokenId}` : null
 }
 
+/**
+ * A chain's name, whether or not anything is deployed on it.
+ *
+ * Reading this out of NETWORKS was wrong the moment a chain could be known but
+ * undeployed: the wallet-mismatch banner then named one side and printed a bare
+ * number for the other.
+ */
 export function chainName(id: number): string {
-  return networkFor(id)?.chain.name ?? (id === 31337 ? "Anvil (local)" : `chainId ${id}`)
+  return KNOWN_CHAINS.find((c) => c.id === id)?.name ?? `chainId ${id}`
 }
