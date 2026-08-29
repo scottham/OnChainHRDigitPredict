@@ -1,21 +1,15 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import { useAccount, useSwitchChain } from "wagmi"
 import { Globe } from "lucide-react"
 
-import { NETWORKS, WALLET_CHAINS, networkFor, type Network } from "@/lib/networks"
+import { NETWORKS, type Network } from "@/lib/networks"
 import { useT } from "@/lib/i18n"
 
 /**
- * Which network the app reads from.
- *
- * Every chain the app knows is listed, not only the ones with a contract. A
- * list that hides the undeployed ones disappears entirely the moment there is
- * one deployment left, and the wallet's own chain switcher -- which looks the
- * same and sits beside it -- is then the only thing that responds to a click,
- * silently switching the wallet instead of the app. Picking a chain with
- * nothing on it goes to /deploy, which is the only useful answer.
+ * Which network the app reads from -- and the only network control on the page.
+ * RainbowKit's own chain button is switched off (see app/page.tsx): two
+ * identical dropdowns showing different networks is worse than none.
  *
  * Switching also asks a connected wallet to follow, because a page reading one
  * chain while the wallet sits on another is precisely how a transaction meant
@@ -31,11 +25,10 @@ export default function NetworkPicker({
   onChange: (chainId: number) => void
 }) {
   const t = useT()
-  const router = useRouter()
   const { isConnected } = useAccount()
   const { switchChain } = useSwitchChain()
 
-  if (WALLET_CHAINS.length < 2 && NETWORKS.length < 2) return null
+  if (NETWORKS.length < 2) return null
 
   return (
     <label className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-card/50 px-2.5 py-1.5 backdrop-blur">
@@ -45,12 +38,6 @@ export default function NetworkPicker({
         value={active?.chain.id ?? ""}
         onChange={(e) => {
           const id = Number(e.target.value)
-          // Nothing to read there yet -- send them to the page that fixes that
-          // rather than switching to a chain the app cannot answer from.
-          if (!networkFor(id)) {
-            router.push("/deploy")
-            return
-          }
           onChange(id)
           if (isConnected) switchChain?.({ chainId: id })
         }}
@@ -61,10 +48,9 @@ export default function NetworkPicker({
             {t.picker.none}
           </option>
         )}
-        {WALLET_CHAINS.map((c) => (
-          <option key={c.id} value={c.id} className="bg-background">
-            {c.name}
-            {networkFor(c.id) ? "" : ` · ${t.picker.undeployed}`}
+        {NETWORKS.map((n) => (
+          <option key={n.chain.id} value={n.chain.id} className="bg-background">
+            {n.chain.name}
           </option>
         ))}
       </select>

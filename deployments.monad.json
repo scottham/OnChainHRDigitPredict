@@ -13,5 +13,5 @@
   "tokenIds": {
     "MNISTPacked": "1"
   },
-  "notes": "MNISTPacked was deployed and minted from a browser wallet via /deploy by 0x0061e7958aA1f6bbDA7fFdB4D079fa2d413263dd, which also owns its token 1 -- not the `deployer` above, which deployed the earlier three-contract implementation. That one is still on chain and is no longer read by the app."
+  "notes": "MNISTPacked was deployed and minted by 0x0061e7958aA1f6bbDA7fFdB4D079fa2d413263dd, which also owns its token 1 -- not the `deployer` above, which deployed the earlier three-contract implementation. That one is still on chain and is no longer read by the app."
 }

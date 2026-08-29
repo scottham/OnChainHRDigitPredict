@@ -113,7 +113,7 @@ export default function InferenceTraceView({
           {t.trace.badge}
         </span>
       </div>
-      <p className="mb-5 text-xs text-muted-foreground">{t.trace.intro()}</p>
+      <p className="mb-5 text-xs text-muted-foreground">{t.trace.intro}</p>
 
       {loading && (
         <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">

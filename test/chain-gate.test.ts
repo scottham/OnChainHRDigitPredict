@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict"
 import { mintGate } from "../lib/chain-gate.js"
-import { NETWORKS, chainName, isUndeployed, readChainId } from "../lib/networks.js"
+import { NETWORKS, chainName, readChainId } from "../lib/networks.js"
 
 const cases: [string, Parameters<typeof mintGate>[0], boolean, string][] = [
   ["no wallet", { isConnected: false, walletChainId: undefined, nodeChainId: 10143 }, false, "disconnected"],
@@ -47,10 +47,6 @@ const chainCases: [string, () => void][] = [
   ["a chain nothing knows also follows the fallback", () => {
     if (!first) return
     assert.equal(readChainId(999999), first)
-  }],
-  ["undeployed means known but contractless", () => {
-    if (first) assert.equal(isUndeployed(first), false)
-    assert.equal(isUndeployed(999999), false, "unknown chains are not 'undeployed'")
   }],
   // chainName once read NETWORKS only, so the wallet-mismatch banner named the
   // app's chain and printed a bare id for the wallet's.

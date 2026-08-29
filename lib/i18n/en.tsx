@@ -37,7 +37,6 @@ export const en = {
   picker: {
     label: "Network",
     none: "no network",
-    undeployed: "not deployed",
   },
   banner: {
     missingContract: (address: string, network: string, envVar: string): ReactNode => (
@@ -93,109 +92,28 @@ export const en = {
     notMeasured: "not measured",
     weightsValue: (weights: string, words: number) => `${weights} int8 in ${words} words`,
     biasesValue: (biases: number) => `${biases} × int256`,
-    accuracyNote:
-      "Accuracy is not stored on-chain. 98.13% is this repo's own model, measured offline against the MNIST test set; nothing is known about other tokens' weights.",
+    accuracyNote: "Measured offline, for this repo's model only.",
     tokenLink: (tokenId: string) => `token #${tokenId}`,
   },
   mint: {
     title: "Mint your own model",
     advanced: "Advanced",
-    intro: (): ReactNode => (
-      <>
-        Upload the JSON produced by <Mono>model/train.py</Mono>. One transaction, one confirmation.
-      </>
-    ),
+    intro: "The JSON from model/train.py. One transaction.",
     choose: "Choose parameters JSON",
     connect: "Connect wallet to mint",
     minting: "Minting…",
     submit: "Mint model NFT",
-    deployLink: "No contract on this chain yet? Deploy one and mint into it →",
-  },
-  deploy: {
-    title: "Deploy & mint",
-    subtitle: "Put MNISTPacked on a chain, from your own wallet",
-    back: "Back to the demo",
-    intro: (): ReactNode => (
-      <>
-        Two transactions, sent by your wallet rather than by a key in{" "}
-        <Mono>.env</Mono>: deploy the contract, then upload the weights into it.
-        Both declare an explicit gas limit, because Monad bills the limit rather
-        than the gas used — what each one reserves is shown before you press it.
-        Nothing on this page holds a private key.
-      </>
-    ),
-    assetsMissing:
-      "Could not load the bytecode or the weights. Run `node scripts/gen-deploy-assets.mjs` after `forge build`.",
-    walletTitle: "Where this will land",
-    mainnetTag: "mainnet",
-    mainnetWarning:
-      "This is mainnet. Both transactions spend real MON, and Monad charges the gas limit shown, not the gas used.",
-    connectFirst: "Connect a wallet to see the chain, the balance and the cost.",
-    chain: "chain",
-    account: "account",
-    balance: "balance",
-    feeCap: "fee cap",
-    unknownChain:
-      "This chain is not one the app knows. The transactions will still be sent to whatever your wallet is connected to — switch it first if that is not what you meant.",
-    insufficient: (needed: string, have: string) =>
-      `Not enough to deploy: this reserves ${needed} and the account holds ${have}.`,
-    step1Title: "1. Deploy MNISTPacked",
-    step1Body:
-      "One contract, no constructor arguments. It holds the weights and runs the whole forward pass itself.",
-    initCode: "init code",
-    gasLimit: "gas limit",
-    reserves: "reserves",
-    deployButton: "Deploy contract",
-    deployAgain: "Deploy another",
-    step2Title: "2. Mint the weights",
-    step2Body:
-      "Uploads this repo's trained model into the contract above as token #1. Weights go up packed, 32 int8 per 256-bit word.",
-    contractAddress: "contract address (filled in after deploying, or paste one)",
-    weights: "weights",
-    calldata: "packed into",
-    mintButton: "Mint weights NFT",
-    mintAgain: "Mint another",
-    confirmInWallet: "Confirm in wallet…",
-    mining: "Waiting for the chain…",
-    submitted: "Transaction submitted",
-    deployed: "Contract deployed",
-    minted: "Model minted",
-    deployFailed: "Deploy failed",
-    mintFailed: "Mint failed",
-    reverted: "The deployment transaction reverted.",
-    mintedNothing: "The transaction landed but minted nothing — no Transfer event from that address.",
-    badAddress: "That is not a contract address.",
-    noCode: (address: string) => `No contract code at ${address} on this chain.`,
-    doneTitle: "Done",
-    doneBody: (tokenId: string) =>
-      `Token #${tokenId} holds the model. Add these to .env and restart the dev server to point the app at it:`,
   },
   execution: {
     title: "Chain execution",
     empty: "Run a prediction to replay the call it made on-chain.",
     blockLabel: (network: string, block: string) => `${network} · block #${block}`,
-    axisGas: "x = gas consumed (the EVM's clock)",
-    summary: (gas: string, blockShare: string): ReactNode => (
-      <>
-        One prediction is <strong>one call and no external calls at all</strong>, burning {gas} gas
-        — {blockShare}% of a Monad block. There is nothing to trace: MNISTPacked computes every
-        layer inside itself, which is most of why it costs a fifth of what a call-per-layer
-        implementation does. The bar below is therefore a <em>measurement</em>, not a trace: each
-        segment is the difference between two <Mono>eth_estimateGas</Mono> runs of the pipeline cut
-        short at successive layers.
-      </>
-    ),
+    axisGas: "x = gas",
+    summary: (gas: string, blockShare: string) =>
+      `1 call · 0 external calls · ${gas} gas · ${blockShare}% of a Monad block`,
     noEstimate: "This node would not estimate gas, so the per-layer breakdown is unavailable.",
-    replayNote: (realMs: number): ReactNode => (
-      <>
-        The replay runs at real speed — it lasts the {realMs} ms the call actually took, which is
-        why it is over almost before you see it. Within that window the play head advances by{" "}
-        <strong>gas, not seconds</strong>: nothing on chain records when a layer ran, only what it
-        cost, so gas is the only per-step clock the EVM has — and measuring a layer&apos;s wall
-        clock from here is hopeless anyway, since one RPC round trip is longer than the whole
-        prediction. Drag the slider to walk through it by hand.
-      </>
-    ),
+    replayNote: (realMs: number) =>
+      `Replayed at real speed (${realMs} ms). The play head advances by gas, not seconds.`,
     stageLabel: {
       load: "load model",
       pack: "pack input",
@@ -236,22 +154,14 @@ export const en = {
     loadingLayout: "Reading…",
     showStorage: "Show storage read",
     noPrestate: "This node does not expose prestateTracer.",
-    storageHint:
-      "One more traced execution, cached afterwards — the weights are the same for every image, so this is asked once per model.",
+    storageHint: "One more traced execution, cached afterwards.",
     slotsRead: (n: number) => `${n} storage words read · 32 int8 weights packed per word`,
     slotDetail: (index: number, head: string, tail: string) => `slot ${index}: ${head}…${tail}`,
   },
   trace: {
     title: "Execution trace",
     badge: "measured on-chain",
-    intro: (): ReactNode => (
-      <>
-        Every activation below is the actual return value of an on-chain call.{" "}
-        <Mono>MNISTPacked.activations()</Mono> reruns the forward pass, stops at that layer and
-        unpacks the lanes it holds, so what you see is the contract&apos;s own arithmetic. Nothing
-        here is recomputed in the browser.
-      </>
-    ),
+    intro: "Every activation below came back from the chain. Nothing here is recomputed in the browser.",
     loading: "Running the layers…",
     empty: "Run a prediction to see the layer-by-layer execution.",
     input: "Input",
@@ -259,8 +169,7 @@ export const en = {
     noExternalCalls: "0 external calls",
     gasTotal: (gas: string) => `${gas} gas`,
     elapsed: (ms: number) => `${ms} ms`,
-    elapsedTitle:
-      "How long the prediction call itself took. The activations above were fetched afterwards, in parallel, and are not counted in it.",
+    elapsedTitle: "Round trip of the prediction call, network included.",
   },
   footer: {
     source: "Source on GitHub",
