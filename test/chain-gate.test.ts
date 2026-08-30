@@ -53,6 +53,10 @@ const chainCases: [string, () => void][] = [
   ["every known chain has a name, deployed or not", () => {
     assert.equal(chainName(143), "Monad")
     assert.equal(chainName(10143), "Monad Testnet")
+    assert.equal(chainName(1), "Ethereum")
+    assert.equal(chainName(11155111), "Sepolia")
+    assert.equal(chainName(10), "OP Mainnet")
+    assert.equal(chainName(11155420), "OP Sepolia")
     assert.equal(chainName(31337), "Anvil (local)")
     assert.equal(chainName(999999), "chainId 999999")
   }],

@@ -1,0 +1,18 @@
+{
+  "chainId": 10,
+  "network": "OP Mainnet",
+  "deployer": "0x8E5d1Ef824E54648cE19f7f0CC0853DF345c91cF",
+  "deployedAt": "2026-08-29T02:11:56.369Z",
+  "contracts": {
+    "MNISTPacked": "0xaa8a00158b72f28a324634265dbb060e67b1259d"
+  },
+  "tokenIds": {
+    "MNISTPacked": "1"
+  },
+  "transactions": {
+    "deployment": "0x224936f29cf750dd00f9f81685fed91f6a45e30e975826ed6e1dda9324171eeb",
+    "mint": {
+      "MNISTPacked": "0xf8c62da837bd64cfe9f1c2f81be92460e62e2b0dde03c985062dbc066077e7e8"
+    }
+  }
+}

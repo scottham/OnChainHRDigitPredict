@@ -110,7 +110,7 @@ export const en = {
     blockLabel: (network: string, block: string) => `${network} · block #${block}`,
     axisGas: "x = gas",
     summary: (gas: string, blockShare: string) =>
-      `1 call · 0 external calls · ${gas} gas · ${blockShare}% of a Monad block`,
+      `1 call · 0 external calls · ${gas} gas · ${blockShare}% of the block gas limit`,
     noEstimate: "This node would not estimate gas, so the per-layer breakdown is unavailable.",
     replayNote: (realMs: number) =>
       `Replayed at real speed (${realMs} ms). The play head advances by gas, not seconds.`,

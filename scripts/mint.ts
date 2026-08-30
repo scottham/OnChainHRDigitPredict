@@ -20,6 +20,7 @@ const target = (arg("target") ?? "anvil") as Target
 const paramsPath = arg("params")
 const deploymentPath = arg("deployment") ?? `deployments.${target}.json`
 const gasPad = BigInt(arg("gas-pad") ?? "115")
+const dryRun = process.argv.includes("--dry-run")
 /** Both contracts take the same packed calldata, so either can be minted into. */
 const contractName = arg("contract") ?? "MNISTNFT"
 
@@ -54,6 +55,10 @@ async function main() {
   // limit costs real money -- keep the pad tight and show what it reserves.
   console.log(`estimate: ${estimate} gas, limit ${gas}`)
   console.log(`reserved: ${formatEther(gas * fees.maxFeePerGas)} ${chain.nativeCurrency.symbol}\n`)
+  if (dryRun) {
+    console.log("dry-run: no transaction sent")
+    return
+  }
 
   const hash = await walletClient.writeContract({
     address, abi, functionName: "mint", args, gas, chain, account, ...fees,
@@ -72,8 +77,16 @@ async function main() {
 
   if (contractName === "MNISTNFT") deployment.tokenId = tokenId.toString()
   else deployment.tokenIds = { ...(deployment.tokenIds ?? {}), [contractName]: tokenId.toString() }
+  deployment.transactions = {
+    ...(deployment.transactions ?? {}),
+    mint: { ...(deployment.transactions?.mint ?? {}), [contractName]: hash },
+  }
   writeFileSync(deploymentPath, JSON.stringify(deployment, null, 2) + "\n")
-  console.log(`\nnext: npx tsx scripts/verify.ts --target ${target}`)
+  console.log(
+    contractName === "MNISTPacked"
+      ? `\nnext: npm run smoke -- --target ${target}`
+      : `\nnext: npx tsx scripts/verify.ts --target ${target}`
+  )
 }
 
 main().catch((err) => {

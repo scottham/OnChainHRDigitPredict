@@ -22,8 +22,12 @@ import { MNIST_ABI } from "./abi"
  * page reports is the prediction's own and nothing else's.
  */
 
-/** Gas handed to a read call. A prediction burns ~10.2M. */
-const SUPPLIED_GAS = 30_000_000
+/**
+ * Gas handed to a read call. A prediction burns ~10-11M. Keep this below the
+ * 16,777,216 per-transaction cap used by Ethereum and OP so the exact same
+ * eth_call is accepted on every configured chain.
+ */
+const SUPPLIED_GAS = 16_500_000
 
 /** [channels][height][width] */
 export type FeatureMaps = number[][][]
@@ -51,6 +55,7 @@ export type InferenceRun = {
   /** Wall clock of the prediction call alone. */
   elapsedMs: number
   blockNumber: bigint
+  blockGasLimit: number
   /**
    * What the prediction costs, from eth_estimateGas -- or null if the node will
    * not estimate. Unlike MNISTNFT there is no trace to read a figure off, and
@@ -146,7 +151,7 @@ export async function runInference(
       .call({ to: contract, data: stageData("activations", tokenId, grid, stage), gas: BigInt(SUPPLIED_GAS) })
       .then((r) => decode3D(r.data!))
 
-  const [scores, conv1, pool1, conv2, pool2, blockNumber, gasTotal, stages] = await Promise.all([
+  const [scores, conv1, pool1, conv2, pool2, block, gasTotal, stages] = await Promise.all([
     client
       .call({ to: contract, data: callData("logits", tokenId, grid), gas: BigInt(SUPPLIED_GAS) })
       .then((r) => (decodeAbiParameters(parseAbiParameters("int256[]"), r.data!)[0] as bigint[]).map(Number)),
@@ -154,7 +159,7 @@ export async function runInference(
     read(3),
     read(4),
     read(5),
-    client.getBlockNumber(),
+    client.getBlock({ blockTag: "latest" }),
     client
       .estimateGas({ to: contract, data: callData("inference", tokenId, grid) })
       .then(Number)
@@ -170,7 +175,8 @@ export async function runInference(
     conv2,
     pool2,
     elapsedMs,
-    blockNumber,
+    blockNumber: block.number,
+    blockGasLimit: Number(block.gasLimit),
     gasTotal,
     stages,
     contract,

@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" })
  */
 export const metadata: Metadata = {
   description:
-    "A convolutional network whose weights live in an NFT and whose forward pass runs entirely in EVM contracts on Monad testnet.",
+    "A convolutional network whose weights live in an NFT and whose forward pass runs entirely in EVM contracts across Ethereum, OP, and Monad networks.",
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -36,9 +36,9 @@ const connectors = connectorsForWallets([{ groupName: "Wallets", wallets }], {
  * Every chain a wallet may be on, not just the ones with a contract.
  *
  * NETWORKS can be empty or short -- a chain is listed there only once
- * MNISTPacked is deployed on it -- and /deploy is how it gets there, so the
- * wallet has to be connectable to a chain the app cannot yet read. This also
- * keeps chains[0] defined, which createConfig dereferences as it builds.
+ * MNISTPacked is deployed on it. WALLET_CHAINS also includes supported deploy
+ * targets so a wallet connected to one can be named and safely gated. It keeps
+ * chains[0] defined, which createConfig dereferences as it builds.
  */
 const chains: readonly [Chain, ...Chain[]] = WALLET_CHAINS
 
@@ -53,11 +53,9 @@ export const wagmiConfig = createConfig({
    * Multicall batching must stay off.
    *
    * wagmi enables it by default on any chain with a Multicall3 deployment, and
-   * viem's monadTestnet definition has one. inference() burns ~60M gas, and
-   * routed through Multicall3 the 63/64 gas-forwarding rule plus the RPC's
-   * eth_call budget starve the inner call. aggregate3 then swallows the
-   * failure and reports success=false, which surfaces as a bare revert with no
-   * reason -- the call never even reaches the NFT contract.
+   * The prediction is intentionally one direct eth_call on every chain. Keeping
+   * it out of Multicall3 avoids the 63/64 forwarding rule and makes RPC gas caps
+   * and failures observable instead of wrapped in aggregate3's success flag.
    */
   batch: { multicall: false },
 })

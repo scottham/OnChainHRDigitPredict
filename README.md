@@ -31,6 +31,20 @@ One contract, and it makes no external calls: a prediction is a single
 calls and ~58M gas) is still in `contracts/` and still deployed on both chains,
 but the app no longer speaks to it — see [Why one contract](#why-one-contract).
 
+`MNISTPacked` and model token #1 are also live on the four additional targets
+supported by the scripts and web network picker:
+
+| Target | Chain | chainId | `MNISTPacked` |
+| --- | --- | ---: | --- |
+| `ethereum` | Ethereum | 1 | [`0x4b5b…8f06`](https://etherscan.io/address/0x4b5bc7d9371ebeacf8f9f7bce4cee6e87ab18f06) |
+| `sepolia` | Sepolia | 11155111 | [`0xaa8a…59d`](https://sepolia.etherscan.io/address/0xaa8a00158b72f28a324634265dbb060e67b1259d) |
+| `op` | OP Mainnet | 10 | [`0xaa8a…59d`](https://optimistic.etherscan.io/address/0xaa8a00158b72f28a324634265dbb060e67b1259d) |
+| `opSepolia` | OP Sepolia | 11155420 | [`0x00a8…24f`](https://optimism-sepolia.blockscout.com/address/0x00a8d614722c5f7325d00e689ec3eb71046c424f) |
+
+All four deployments were smoke-tested through the same calls as the web app:
+label, ten logits, four activation tensors, and eight stage gas estimates. The
+reference sample predicted 7 on every chain at 10,438,269 estimated gas.
+
 Inference is a `view` call, so the demo needs no wallet, no gas and no
 signature. Minting a model does need one.
 
@@ -86,6 +100,10 @@ with an address are offered in the picker:
 ```
 NEXT_PUBLIC_CONTRACT_ADDRESS_143=0x83e7…      # mainnet
 NEXT_PUBLIC_CONTRACT_ADDRESS_10143=0xbb66…    # testnet
+# NEXT_PUBLIC_CONTRACT_ADDRESS_1=0x…           # Ethereum
+# NEXT_PUBLIC_CONTRACT_ADDRESS_11155111=0x…    # Sepolia
+# NEXT_PUBLIC_CONTRACT_ADDRESS_10=0x…          # OP Mainnet
+# NEXT_PUBLIC_CONTRACT_ADDRESS_11155420=0x…    # OP Sepolia
 NEXT_PUBLIC_DEFAULT_CHAIN_ID=143
 ```
 
@@ -164,6 +182,9 @@ python3 model/make_fixture.py model/checkpoints/<best>.pth 200
 # compile
 cd model/scripts_for_contracts_and_test && forge build && cd -
 
+# estimate a public deployment without sending a transaction
+npx tsx scripts/deploy-packed.ts --target sepolia --dry-run
+
 # local chain
 anvil --gas-limit 2000000000 --block-base-fee-per-gas 0
 
@@ -176,6 +197,21 @@ npx tsx scripts/mint.ts --target anvil --contract MNISTPacked \
 npx tsx scripts/deploy-packed.ts --target monadTestnet
 npx tsx scripts/mint.ts --target monadTestnet --contract MNISTPacked \
   --params model/checkpoints/<best>.json
+
+# Ethereum / OP testnets and mainnets use the same two-step flow
+npx tsx scripts/deploy-packed.ts --target sepolia
+npx tsx scripts/mint.ts --target sepolia --contract MNISTPacked \
+  --params model/checkpoints/<best>.json
+npx tsx scripts/deploy-packed.ts --target opSepolia
+npx tsx scripts/mint.ts --target opSepolia --contract MNISTPacked \
+  --params model/checkpoints/<best>.json
+
+# exercise the same reads as the web app; sends no transaction
+npm run smoke -- --target opSepolia
+
+# These spend real ETH
+npx tsx scripts/deploy-packed.ts --target ethereum
+npx tsx scripts/deploy-packed.ts --target op
 
 # prove it computes what the three-contract implementation computes, against a
 # deployed address rather than a recompile. Needs no funds and deploys nothing.

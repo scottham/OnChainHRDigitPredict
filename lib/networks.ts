@@ -1,9 +1,13 @@
 import type { Chain } from "viem"
-import { monad, monadTestnet } from "viem/chains"
+import { mainnet, monad, monadTestnet, optimism, optimismSepolia, sepolia } from "viem/chains"
 import { defineChain } from "viem"
 
+import ethereumDeployment from "../deployments.ethereum.json"
 import monadDeployment from "../deployments.monad.json"
 import monadTestnetDeployment from "../deployments.monadTestnet.json"
+import opDeployment from "../deployments.op.json"
+import opSepoliaDeployment from "../deployments.opSepolia.json"
+import sepoliaDeployment from "../deployments.sepolia.json"
 
 /**
  * Every network the app can be pointed at, with the contract that holds the
@@ -48,6 +52,10 @@ const isAddress = (v: string | undefined): v is `0x${string}` => /^0x[0-9a-fA-F]
  * prediction. Deploy and mint there, and it appears.
  */
 const DEPLOYED: Record<number, string | undefined> = {
+  [ethereumDeployment.chainId]: (ethereumDeployment.contracts as Record<string, string>).MNISTPacked,
+  [sepoliaDeployment.chainId]: (sepoliaDeployment.contracts as Record<string, string>).MNISTPacked,
+  [opDeployment.chainId]: (opDeployment.contracts as Record<string, string>).MNISTPacked,
+  [opSepoliaDeployment.chainId]: (opSepoliaDeployment.contracts as Record<string, string>).MNISTPacked,
   [monadDeployment.chainId]: (monadDeployment.contracts as Record<string, string>).MNISTPacked,
   [monadTestnetDeployment.chainId]: (monadTestnetDeployment.contracts as Record<string, string>)
     .MNISTPacked,
@@ -67,6 +75,14 @@ function build(chain: Chain, contract: string | undefined, rpc: string | undefin
 export const NETWORKS: Network[] = [
   build(monad, process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_143, process.env.NEXT_PUBLIC_RPC_URL_143, true),
   build(monadTestnet, process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_10143, process.env.NEXT_PUBLIC_RPC_URL_10143),
+  build(mainnet, process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_1, process.env.NEXT_PUBLIC_RPC_URL_1, true),
+  build(sepolia, process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_11155111, process.env.NEXT_PUBLIC_RPC_URL_11155111),
+  build(optimism, process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_10, process.env.NEXT_PUBLIC_RPC_URL_10, true),
+  build(
+    optimismSepolia,
+    process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_11155420,
+    process.env.NEXT_PUBLIC_RPC_URL_11155420
+  ),
   build(anvil, process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_31337, process.env.NEXT_PUBLIC_RPC_URL_31337),
 ].filter((n): n is Network => n !== null)
 
@@ -93,11 +109,23 @@ export const FALLBACK_CHAIN: Chain = monad
  * none, so wagmi has to know the chain before there is anything on it,
  * otherwise the wallet connects and no client can be built for it.
  */
-export const KNOWN_CHAINS: readonly [Chain, ...Chain[]] = [monad, monadTestnet, anvil]
+export const KNOWN_CHAINS: readonly [Chain, ...Chain[]] = [
+  monad,
+  monadTestnet,
+  mainnet,
+  sepolia,
+  optimism,
+  optimismSepolia,
+  anvil,
+]
 
 export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [
   monad,
   monadTestnet,
+  mainnet,
+  sepolia,
+  optimism,
+  optimismSepolia,
   // Anvil only when this run was pointed at a local node. It is a development
   // chain: offering it in a real wallet's network list is noise at best, and an
   // invitation to switch to a chain that is not running at worst. It stays in
@@ -115,6 +143,10 @@ export function rpcFor(chain: Chain): string {
   const override = {
     [monad.id]: process.env.NEXT_PUBLIC_RPC_URL_143,
     [monadTestnet.id]: process.env.NEXT_PUBLIC_RPC_URL_10143,
+    [mainnet.id]: process.env.NEXT_PUBLIC_RPC_URL_1,
+    [sepolia.id]: process.env.NEXT_PUBLIC_RPC_URL_11155111,
+    [optimism.id]: process.env.NEXT_PUBLIC_RPC_URL_10,
+    [optimismSepolia.id]: process.env.NEXT_PUBLIC_RPC_URL_11155420,
     [anvil.id]: process.env.NEXT_PUBLIC_RPC_URL_31337,
   }[chain.id]
   return override || chain.rpcUrls.default.http[0]
@@ -175,7 +207,11 @@ export function explorerAddress(network: Network, address: string) {
 /** The NFT page for one token -- the model, not the contract that holds it. */
 export function explorerToken(network: Network, tokenId: bigint | string) {
   const url = network.chain.blockExplorers?.default.url
-  return url ? `${url}/nft/${network.contract}/${tokenId}` : null
+  if (!url) return null
+  // Etherscan-family explorers use /nft; Blockscout uses token instances.
+  return /blockscout/i.test(url)
+    ? `${url}/token/${network.contract}/instance/${tokenId}`
+    : `${url}/nft/${network.contract}/${tokenId}`
 }
 
 /**

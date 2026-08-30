@@ -15,9 +15,6 @@ import { explorerAddress, type Network } from "@/lib/networks"
 import { useT } from "@/lib/i18n"
 import { usePublicClient } from "wagmi"
 
-/** Monad's block gas limit -- the yardstick for "how big is this call". */
-const MONAD_BLOCK_GAS_LIMIT = 150_000_000
-
 const STAGE_COLOR: Record<StageKey, string> = {
   load: "#6d28d9",
   pack: "#38bdf8",
@@ -129,7 +126,9 @@ export default function ChainExecution({
   onStage?: (stage: StageKey | null) => void
 }) {
   const t = useT()
-  const publicClient = usePublicClient()
+  // Follow the deployment selected in the app, not whichever chain a wallet
+  // happens to be connected to. Storage tracing is a read-only network action.
+  const publicClient = usePublicClient({ chainId: network?.chain.id })
   const [progress, setProgress] = useState(1)
   /** Storage layout, also on demand -- it costs one more traced execution. */
   const [layout, setLayout] = useState<StorageLayout | null>(null)
@@ -206,7 +205,7 @@ export default function ChainExecution({
 
   const gasKnown = run.gasTotal !== null
   const gasShown = run.gasTotal ?? stageGas
-  const blockShare = (gasShown / MONAD_BLOCK_GAS_LIMIT) * 100
+  const blockShare = run.blockGasLimit > 0 ? (gasShown / run.blockGasLimit) * 100 : 0
 
   return (
     <section className="rounded-2xl border border-border/60 bg-card/50 p-5 backdrop-blur">

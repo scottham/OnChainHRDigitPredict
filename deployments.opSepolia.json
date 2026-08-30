@@ -1,0 +1,18 @@
+{
+  "chainId": 11155420,
+  "network": "OP Sepolia",
+  "deployer": "0x8E5d1Ef824E54648cE19f7f0CC0853DF345c91cF",
+  "deployedAt": "2026-08-29T02:09:32.000Z",
+  "contracts": {
+    "MNISTPacked": "0x00a8d614722c5f7325d00e689ec3eb71046c424f"
+  },
+  "tokenIds": {
+    "MNISTPacked": "1"
+  },
+  "transactions": {
+    "deployment": "0x237370ef00e6ec970508a62008ca53894a57e5b227c4b066fce5a5a893d0b1a4",
+    "mint": {
+      "MNISTPacked": "0x379739cbb2896400d1be8d88dd98fd97dc25ee5cbcecd8820e805e5397c718c9"
+    }
+  }
+}

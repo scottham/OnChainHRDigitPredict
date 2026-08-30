@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { createPublicClient, createWalletClient, http, defineChain, type Abi, type Hex } from "viem"
+import { createPublicClient, createWalletClient, http, defineChain, type Abi, type Chain, type Hex } from "viem"
+import { mainnet, optimism, optimismSepolia, sepolia } from "viem/chains"
 import { privateKeyToAccount } from "viem/accounts"
 
 export { computeFees, padGas, type Fees } from "../lib/fees.js"
@@ -88,13 +89,38 @@ export function loadParams(path: string): ModelParams {
   }
 }
 
-export type Target = "anvil" | "monadTestnet" | "monad"
+export type Target =
+  | "anvil"
+  | "monadTestnet"
+  | "monad"
+  | "ethereum"
+  | "sepolia"
+  | "op"
+  | "opSepolia"
+
+type PublicTarget = Exclude<Target, "anvil">
+
+const PUBLIC_TARGETS: Record<PublicTarget, { chain: Chain; rpcEnv: string }> = {
+  monad: { chain: monadMainnet, rpcEnv: "MONAD_RPC_URL" },
+  monadTestnet: { chain: monadTestnet, rpcEnv: "MONAD_TESTNET_RPC_URL" },
+  ethereum: { chain: mainnet, rpcEnv: "ETHEREUM_RPC_URL" },
+  sepolia: { chain: sepolia, rpcEnv: "SEPOLIA_RPC_URL" },
+  op: { chain: optimism, rpcEnv: "OP_RPC_URL" },
+  opSepolia: { chain: optimismSepolia, rpcEnv: "OP_SEPOLIA_RPC_URL" },
+}
+
+export function targetConfig(target: Target): { chain: Chain; rpcEnv: string | null } {
+  if (target === "anvil") return { chain: anvilChain, rpcEnv: null }
+  const config = PUBLIC_TARGETS[target]
+  if (!config) throw new Error(`unknown target: ${target}`)
+  return config
+}
 
 /**
  * Build clients for a target. The key comes from PRIVATE_KEY in .env and is
  * never logged -- only the derived address is printed.
  *
- * `monad` is mainnet and spends real MON.
+ * `monad`, `ethereum`, and `op` are mainnets and spend real funds.
  */
 export function makeClients(target: Target) {
   if (target === "anvil") {
@@ -112,11 +138,11 @@ export function makeClients(target: Target) {
   const normalized = (key.startsWith("0x") ? key : `0x${key}`) as Hex
   const account = privateKeyToAccount(normalized)
 
-  const base = target === "monad" ? monadMainnet : monadTestnet
-  // Deliberately not NEXT_PUBLIC_RPC_URL: that one follows whatever the app is
-  // pointed at, which may be a different chain than the target asked for.
-  const envRpc = target === "monad" ? process.env.MONAD_RPC_URL : process.env.MONAD_TESTNET_RPC_URL
-  const rpc = envRpc || base.rpcUrls.default.http[0]
+  const { chain: base, rpcEnv } = targetConfig(target)
+  // Deliberately not NEXT_PUBLIC_RPC_URL_<chainId>: deployment credentials and
+  // browser configuration are separate concerns. A script must never follow a
+  // frontend override onto a chain other than the explicit --target.
+  const rpc = (rpcEnv && process.env[rpcEnv]) || base.rpcUrls.default.http[0]
   const chain = { ...base, rpcUrls: { default: { http: [rpc] } } }
 
   return {

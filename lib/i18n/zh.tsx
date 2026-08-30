@@ -106,7 +106,7 @@ export const zh: Messages = {
     blockLabel: (network, block) => `${network} · 区块 #${block}`,
     axisGas: "x = gas",
     summary: (gas, blockShare) =>
-      `1 次调用 · 0 次外部调用 · ${gas} gas · 一个 Monad 区块的 ${blockShare}%`,
+      `1 次调用 · 0 次外部调用 · ${gas} gas · 区块 gas 上限的 ${blockShare}%`,
     noEstimate: "该节点不提供 gas 估算，因此无法给出逐层开销。",
     replayNote: (realMs) => `按真实速度回放（${realMs} 毫秒）· 播放头按 gas 推进`,
     stageLabel: {

@@ -1,0 +1,18 @@
+{
+  "chainId": 1,
+  "network": "Ethereum",
+  "deployer": "0x8E5d1Ef824E54648cE19f7f0CC0853DF345c91cF",
+  "deployedAt": "2026-08-29T02:12:15.627Z",
+  "contracts": {
+    "MNISTPacked": "0x4b5bc7d9371ebeacf8f9f7bce4cee6e87ab18f06"
+  },
+  "tokenIds": {
+    "MNISTPacked": "1"
+  },
+  "transactions": {
+    "deployment": "0x9f0448eac5e5dbab190e966bd49f7e170195a24ebe6b969562721fb930f61ed6",
+    "mint": {
+      "MNISTPacked": "0x66ab7f5e6fc47ba9012ba55bb87268c452bf950655667f5599077ce892b272f3"
+    }
+  }
+}
